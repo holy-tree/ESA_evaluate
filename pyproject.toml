@@ -1,0 +1,12 @@
+[project]
+name = "esa-evaluate"
+version = "0.1.0"
+requires-python = ">=3.13"
+dependencies = ["Flask>=3.1,<4", "pandas>=2.2,<4", "portion>=2.4,<3", "PyYAML>=6,<7"]
+
+[dependency-groups]
+dev = ["pytest>=8,<10"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

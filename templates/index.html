@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ESA · 异常检测评测台</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <script defer src="{{ url_for('static', filename='app.js') }}"></script>
+</head>
+<body>
+<header><div class="container brand"><span class="brand-mark">ESA</span><div><strong>异常检测评测台</strong><small>ANOMALY EVALUATION · LOCAL PROTOTYPE</small></div><span class="badge">EVENT-WISE F<sub>0.5</sub></span></div></header>
+<main class="container">
+  <section class="intro"><div><p class="eyebrow">ESA ANOMALY DATASET</p><h1>从预测区间，到事件发现能力。</h1><p>统一评分核心，独立 Mission 配置。支持手动输入与整份 CSV 批量评测。</p></div><div class="intro-stat"><b>03</b><span>MISSIONS · ONE METRIC</span></div></section>
+  {% if error %}<div role="alert" class="alert error">{{ error }}{% if source == 'real' %}<br>可选择下方“演示数据”验证完整流程；真实数据不会自动回退。{% endif %}</div>{% endif %}
+  <form id="evaluation-form" method="post" enctype="multipart/form-data">
+    <section class="panel">
+      <div class="section-heading"><h2><span>01</span> 评测协议</h2><span class="badge {{ 'demo' if source == 'demo' else '' }}">{{ '演示数据 · 非真实性能' if source == 'demo' else '真实 ESA 标签' }}</span></div>
+      <div class="settings-grid">
+        <label>Mission<select id="mission" name="mission" class="context-select">{% for m in missions %}<option value="{{ m }}" {{ 'selected' if m == mission }}>{{ m }}{{ '：自定义评测' if m == 'Mission3' }}</option>{% endfor %}</select></label>
+        <label>数据来源<select id="source" name="source" class="context-select"><option value="real" {{ 'selected' if source == 'real' }}>真实 ESA</option><option value="demo" {{ 'selected' if source == 'demo' }}>演示数据（独立小样本）</option></select></label>
+        <label>事件类别<select id="category" name="category" class="context-select"><option value="both" {{ 'selected' if category == 'both' }}>Anomaly + Rare Event</option><option value="anomaly" {{ 'selected' if category == 'anomaly' }}>Anomaly only</option></select></label>
+      </div>
+      {% if cfg %}
+      <input type="hidden" name="version" value="{{ cfg.version }}">
+      <div class="protocol"><div><span>数据版本</span><b>{{ cfg.version }}</b></div><div><span>评测窗口 · UTC</span><b>{{ cfg.start or '待填写' }} → {{ cfg.end or '待填写' }}</b></div><p>{{ cfg.protocol }}</p>
+      {% if dataset %}<details><summary>目标通道（{{ dataset.channels|length }} 个）</summary><p class="channel-list">{{ dataset.channels|join(' · ') }}</p></details>{% endif %}</div>
+      {% if cfg.label_warnings %}<details class="alert warning" open><summary>真实标签质量提示（{{ cfg.label_warnings|length }} 条，详情保存在结果配置中）</summary><ul>{% for warning in cfg.label_warnings %}<li>{{ warning }}</li>{% endfor %}</ul></details>{% endif %}
+      {% if source == 'real' or range_start %}
+      <div class="range-grid"><label>评测窗口开始（UTC）<input class="score-config" type="text" name="range_start" value="{{ range_start }}" placeholder="未配置，请填写观测开始时间"></label><label>评测窗口结束（UTC）<input class="score-config" type="text" name="range_end" value="{{ range_end }}" placeholder="未配置，请填写观测结束时间"></label></div>
+      <label class="checkbox"><input class="score-config" type="checkbox" name="confirm_range" value="yes" {{ 'checked' if range_confirmed }}>使用自定义窗口时，我确认以上起止时间是本次完整观测范围。</label>
+      <p class="muted">默认填入当前 Mission 配置的观测范围，使用默认值无需勾选。未配置或修改为其他窗口时，须填写并确认；不会用异常标签的最早、最晚时间代替观测范围。</p>
+      <details><summary>时间格式怎么看？</summary><p class="muted"><code>2004-12-01T20:42:15.429Z</code> = 2004 年 12 月 1 日 20:42:15.429（UTC）。<code>T</code> 分隔日期和时间，<code>.429</code> 是 429 毫秒，<code>Z</code> 表示 UTC。北京时间需加 8 小时，为次日 04:42:15.429。推荐保留数据里的 Z 格式；若按北京时间输入，请明确带 <code>+08:00</code>，例如 <code>2004-12-02T04:42:15.429+08:00</code>。</p></details>
+      {% endif %}{% endif %}
+    </section>
+    <section class="panel">
+      <div class="section-heading"><h2><span>02</span> 算法预测</h2><span class="muted">单次评测仅使用一种输入模式</span></div>
+      <div class="tabs" role="group" aria-label="输入模式"><label><input type="radio" name="mode" value="manual" {{ 'checked' if mode == 'manual' }}>手动输入</label><label><input type="radio" name="mode" value="csv" {{ 'checked' if mode == 'csv' }}>上传 CSV</label></div>
+      <div id="manual-input" {{ 'hidden' if mode != 'manual' }}>
+        <div class="table-wrap"><table class="input-table"><thead><tr><th>通道</th><th>开始时间 · UTC</th><th>结束时间 · UTC</th><th></th></tr></thead><tbody id="prediction-rows">
+        {% for row in rows %}<tr><td><select name="channel" aria-label="通道">{% if not dataset or row.channel not in dataset.channels %}<option selected value="{{ row.channel }}">{{ row.channel }}</option>{% endif %}{% if dataset %}{% for c in dataset.channels %}<option value="{{ c }}" {{ 'selected' if c == row.channel }}>{{ c }}</option>{% endfor %}{% endif %}</select></td><td><input name="starttime" value="{{ row.starttime }}" placeholder="2024-01-01T00:00:10Z" aria-label="开始时间"></td><td><input name="endtime" value="{{ row.endtime }}" placeholder="2024-01-01T00:00:20Z" aria-label="结束时间"></td><td><button type="button" class="delete-row quiet" aria-label="删除输入行">删除</button></td></tr>{% endfor %}
+        </tbody></table></div>
+        <div class="toolbar"><button type="button" id="add-row" class="secondary">＋ 添加一行</button><button type="button" id="load-example" class="secondary" {{ 'disabled' if source != 'demo' }}>加载当前 Mission 演示预测</button><button type="button" id="clear-rows" class="quiet">清空输入</button></div>
+        <p class="muted">清空所有行后可提交空预测。每个空白输入行会作为错误报告，请删除不用的行。</p>
+      </div>
+      <div id="csv-input" {{ 'hidden' if mode != 'csv' }}>
+        <div class="upload-zone"><strong>上传完整预测结果</strong><p>必需字段：channel,starttime,endtime · 兼容 ESA 大写字段、UTF-8 BOM</p><input id="prediction-csv" type="file" name="prediction_csv" accept=".csv,text/csv"><small>文件上限 {{ max_bytes }} 字节 · 记录上限 {{ max_records }} · 预览前 100 条，评分使用全部记录</small></div>
+        <input type="hidden" id="upload-token" name="upload_token" value="{{ upload_token }}">
+        {% if upload_token and report %}<p class="muted">已保留 {{ report.filename }} 的完整上传数据，可直接开始评测。修改文件请重新选择。</p>{% endif %}
+        <div class="toolbar"><button type="submit" name="action" value="preview" class="secondary">上传并预览 / 校验</button><a href="{{ url_for('demo_csv', mission=mission if mission in missions else 'Mission1', kind='template') }}">下载当前 Mission 演示模板</a><a href="{{ url_for('demo_csv', mission=mission if mission in missions else 'Mission1', kind='predictions') }}">演示预测 CSV</a></div>
+        <p class="muted">下载文件仅适用于对应 Mission 的演示配置。额外列（包括 ID）不参与评分。非法行会阻止整份文件评分。</p>
+      </div>
+      <div class="input-note">时间按 ISO-8601 输入；无时区时间解释为 UTC。普通预测区间为 [start, end)，点事件为闭点；到达评测窗口末端的预测右闭。浏览器不会转换时间值。</div>
+      <div id="stale-notice" class="alert warning" hidden>评分配置或预测已变化，旧结果与校验已失效，请重新校验并评测。</div>
+      <div id="client-message" class="alert warning" hidden></div>
+      <div class="submit-row"><span>主分数评价事件发现能力，不代表通道定位准确率。</span><button class="primary" type="submit" name="action" value="evaluate">开始评测 →</button></div>
+    </section>
+  </form>
+  {% if report %}
+  <section id="validation-report" class="panel"><div class="section-heading"><h2><span>03</span> {{ 'CSV 预览与校验' if mode == 'csv' else '输入校验' }}</h2><span class="badge {{ 'bad' if report.errors else 'good' }}">{{ '存在错误 · 已阻止评分' if report.errors else '校验通过' }}</span></div>
+    {% if report.filename %}<p>文件：<strong>{{ report.filename }}</strong></p>{% endif %}
+    <div class="summary-grid"><div><b>{{ report.raw_count }}</b><span>原始记录</span></div><div><b>{{ report.valid_count }}</b><span>有效记录（含重复）</span></div><div><b>{{ report.duplicate_count }}</b><span>完全重复 / 已去重</span></div><div><b>{{ report.channel_count }}</b><span>涉及通道</span></div></div>
+    <p class="muted">预测时间覆盖：{{ report.coverage|join(' → ') if report.coverage else '无有效预测' }}。覆盖范围不会改变固定评测窗口。</p>
+    {% for warning in report.warnings %}<p class="alert warning">{{ warning }}</p>{% endfor %}
+    {% if report.errors %}<div class="alert error"><strong>请修正以下错误后重新提交：</strong><ul>{% for e in report.errors %}<li>{{ 'CSV 行' if mode == 'csv' else '输入行' }} {{ e.line }}：{{ e.message }}</li>{% endfor %}</ul></div><form method="post" action="/download/errors"><input type="hidden" name="token" value="{{ errors_token }}"><button class="secondary">下载错误明细 CSV</button></form>{% endif %}
+    <details {{ 'open' if report.errors }}><summary>记录预览（最多 100 条）</summary><div class="table-wrap"><table><thead><tr><th>行号</th><th>通道</th><th>开始</th><th>结束</th><th>校验</th></tr></thead><tbody>{% for r in report.preview %}<tr class="{{ 'invalid-row' if r.errors }}"><td>{{ r.line }}</td><td>{{ r.channel }}</td><td>{{ r.starttime }}</td><td>{{ r.endtime }}</td><td>{{ r.errors|join('；') if r.errors else '有效' }}</td></tr>{% endfor %}</tbody></table></div></details>
+  </section>{% endif %}
+  {% if result %}
+  <section id="evaluation-result" class="panel results"><div class="section-heading"><h2><span>04</span> 评测结果</h2><span class="badge">{{ mission }} · {{ result.config.version }} · {{ '演示' if source == 'demo' else '真实标签' }}</span></div>
+    <p class="muted">{{ result.config.selected_categories|join(' + ') }} · {{ result.config.start }} → {{ result.config.end }} · {{ result.config.target_channels|length }} 个目标通道</p>
+    {% if result.reasons %}<div class="alert warning"><strong>不适用</strong>{% for reason in result.reasons %}<p>{{ reason }}</p>{% endfor %}</div>{% endif %}
+    <div class="metric-grid"><div class="metric featured"><span>Corrected event-wise F<sub>0.5</sub></span><b>{{ result.metrics.f0_5|score }}</b><small>β = 0.5 · ESA corrected</small><small>设 P 为修正精确率、R 为召回率：F0.5 = 1.25 × P × R /（0.25 × P + R）。</small></div><div class="metric"><span>修正精确率</span><b>{{ result.metrics.p_corrected|score }}</b><small>P_event × TNR</small><small>事件精确率 = 检出事件数 /（检出事件数 + 误报区间数）；再乘以正常时间中未被报警覆盖的比例。</small></div><div class="metric"><span>召回率</span><b>{{ result.metrics.recall|score }}</b><small>检出 / 可评测事件</small><small>召回率 = 检出事件数 / 可评测真实事件总数；例如 10 个事件检出 8 个，召回率为 0.8。</small></div></div>
+    <div class="summary-grid"><div><b>{{ result.metrics.event_count }}</b><span>真实事件</span></div><div><b>{{ result.metrics.detected_count }}</b><span>检出事件</span></div><div><b>{{ result.metrics.missed_count }}</b><span>漏检事件</span></div><div><b>{{ result.metrics.false_positive_count }}</b><span>误报区间 · 官方语义</span></div></div>
+    <details><summary>查看 P_event、TNR 和完整评测配置</summary><p>P_event = {{ result.metrics.p_event|score }} · TNR = {{ result.metrics.tnr|score }}</p><p class="muted">P_event 为事件精确率：检出事件数 /（检出事件数 + 误报区间数）。TNR 为正常时间中未被报警覆盖的比例；全时段报警会使 TNR 为 0，即使召回率为 1，最终得分也会为 0（指标可定义时）。</p><p>正常时长 {{ result.metrics.nominal_seconds }} 秒 · 正常时间误报覆盖 {{ result.metrics.false_positive_seconds }} 秒</p><pre>{{ result.config|tojson(indent=2) }}</pre></details>
+    <div class="section-heading timeline-heading"><h3>时间条对比</h3><label>仅图表筛选 <select id="chart-channel"><option value="">全部目标通道</option>{% for c in result.config.target_channels %}<option>{{ c }}</option>{% endfor %}</select></label></div>
+    <div class="legend"><span class="truth-dot">真实目标事件</span><span class="excluded-dot">未选类别</span><span class="prediction-dot">算法预测</span><span>◆ 点事件 · 悬停查看详情</span></div>
+    <svg class="timeline" viewBox="0 0 1000 135" role="img" aria-label="真实标签与预测时间条"><text x="5" y="51">标签</text><text x="5" y="101">预测</text><path d="M60 60H960 M60 110H960" class="axis"/>{% for bar in timeline %}{% if bar.point %}<circle data-channel="{{ bar.channel }}" class="bar {{ bar.kind }}" cx="{{ bar.x }}" cy="{{ bar.y + 8 }}" r="5"><title>{{ bar.title }}</title></circle>{% else %}<rect data-channel="{{ bar.channel }}" class="bar {{ bar.kind }}" x="{{ bar.x }}" y="{{ bar.y }}" width="{{ bar.width }}" height="16" rx="3"><title>{{ bar.title }}</title></rect>{% endif %}{% endfor %}</svg>
+    <p class="muted">图表通道筛选仅改变显示；主分数始终在上述全部目标通道上合并计算。多年窗口内的短事件可通过事件表查看精确时间。</p>
+    <h3>真实事件检出 / 漏检</h3><div class="table-wrap"><table><thead><tr><th>事件 ID</th><th>类别</th><th>涉及通道</th><th>状态</th><th>区间集合 · UTC</th></tr></thead><tbody>{% for e in result.events %}<tr><td>{{ e.id }}</td><td>{{ e.category }}</td><td>{{ e.channels|join(', ') }}</td><td><span class="status {{ 'detected' if e.detected else 'missed' }}">{{ '检出' if e.detected else '漏检' }}</span></td><td>{% for i in e.intervals %}<div>{{ i.start }} → {{ i.end }}{{ ' · 点' if i.point }}</div>{% endfor %}</td></tr>{% else %}<tr><td colspan="5">当前范围与类别下没有可评测事件。</td></tr>{% endfor %}</tbody></table></div>
+    <details><summary>合并后的预测区间详情（{{ result.predictions|length }} 个）</summary><div class="table-wrap"><table><thead><tr><th>开始</th><th>结束</th><th>端点</th><th>状态</th></tr></thead><tbody>{% for p in result.predictions %}<tr><td>{{ p.interval.start }}</td><td>{{ p.interval.end }}</td><td>{{ '[点]' if p.interval.point else ('闭区间' if p.interval.right_closed else '[start,end)') }}</td><td>{{ '命中目标事件' if p.matched_selected else ('误报' if p.false_positive else '与未选类别相交，不计事件误报') }}</td></tr>{% endfor %}</tbody></table></div></details>
+    <div class="toolbar downloads"><form method="post" action="/download/json"><input type="hidden" name="token" value="{{ result_token }}"><button class="primary">下载结果 JSON</button></form><form method="post" action="/download/events"><input type="hidden" name="token" value="{{ result_token }}"><button class="secondary">下载事件明细 CSV</button></form></div>
+  </section>{% endif %}
+  <footer>ESA corrected event-wise · β = 0.5 · 参考 ESA-ADB 27ecde187aa6 · 独立评测，不合并不同 Mission 的标签。</footer>
+</main>
+<script type="application/json" id="page-data">{{ {'channels': dataset.channels if dataset else [], 'has_result': result is not none, 'version': cfg.version if cfg else ''}|tojson }}</script>
+</body></html>

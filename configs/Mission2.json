@@ -1,0 +1,31 @@
+{
+  "mission_id": "Mission2",
+  "default_categories": "both",
+  "sources": {
+    "demo": {
+      "version": "demo-1.0",
+      "labels": "demo_data/Mission2/labels.csv",
+      "channels": "demo_data/Mission2/channels.csv",
+      "category_in_labels": true,
+      "start": "2024-02-01T00:00:00Z",
+      "end": "2024-02-01T00:01:40Z",
+      "protocol": "演示数据；异常与罕见正常事件，100 秒自定义窗口。"
+    },
+    "real": {
+      "version": "local-unversioned",
+      "labels": "ESA-Mission2/labels.csv",
+      "anomaly_types": "ESA-Mission2/anomaly_types.csv",
+      "channels": "ESA-Mission2/channels.csv",
+      "start": "2000-01-01T00:00:16.284000Z",
+      "end": "2003-06-30T23:59:52.416000Z",
+      "observation_range_source": {
+        "method": "target_channel_timestamp_envelope",
+        "description": "离线逐个读取目标通道 ZIP 中的 DatetimeIndex，取全体最早及最晚采样时刻；无时区索引解释为 UTC。",
+        "channel_count": 47,
+        "latest_channel_start": "2000-01-01T00:00:16.284000Z",
+        "earliest_channel_end": "2003-06-30T23:59:52.416000Z"
+      },
+      "protocol": "真实 ESA 标签；默认窗口来自 47 个目标通道的实际采样时间边界。未声明官方训练/测试划分；请核实数据发布版本。"
+    }
+  }
+}

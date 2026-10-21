@@ -1,0 +1,3 @@
+ID,Channel,StartTime,EndTime,Category
+id_1,channel_1,2024-02-01T00:00:10Z,2024-02-01T00:00:20Z,Anomaly
+id_2,channel_3,2024-02-01T00:00:40Z,2024-02-01T00:00:50Z,Rare Event

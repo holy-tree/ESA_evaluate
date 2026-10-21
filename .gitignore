@@ -1,0 +1,58 @@
+# Python / uv environments and caches
+.venv/
+venv/
+.uv-cache/
+__pycache__/
+*.py[cod]
+
+# Test, coverage and code-quality caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.hypothesis/
+.tox/
+.nox/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+
+# Python build artifacts
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# IDE and editor local files
+.idea/
+*.swp
+*.swo
+*~
+
+# Local environment files (keep shareable examples)
+.env
+.env.*
+!.env.example
+!.env.sample
+!.env.template
+
+# Flask runtime and local evaluation outputs
+/instance/
+/uploads/
+/results/
+/exports/
+*.log
+
+# Real ESA datasets if copied into the project root
+# Keep demo_data/ and its CSV files under version control.
+/ESA/
+/ESA-Mission1/
+/ESA-Mission2/
+/ESA-Mission3/
+
+# OS-generated files
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Keep uv.lock, configs/, demo_data/ and tests/ under version control.
