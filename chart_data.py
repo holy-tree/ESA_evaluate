@@ -229,6 +229,15 @@ def build_view(store, dataset, channels, start, end, predictions=(), mode="auto"
     budget = max(16, min(max_points, width*4//len(channels)))
     bins_count = max(8, min(width//3, budget//4))
     result = [channel_view(store, dataset, c, a, b, predictions, category, mode, smooth_seconds, budget, bins_count) for c in channels]
+    # Legend navigation uses the true event start across selected channels, not
+    # the first point/fragment surviving the current viewport or pixel budget.
+    event_starts = {}
+    for row in dataset.get("labels", []):
+        if row["channel"] in channels:
+            event_starts[row["id"]] = min(event_starts.get(row["id"], row["start"]), row["start"])
+    for item in result:
+        for event in item["events"]:
+            event["event_start"] = iso(event_starts[event["id"]])
     unit, ticks = chart_ticks(a,b)
     units = {}
     if dataset["config"]["paths"].get("channels"):

@@ -4,6 +4,7 @@ Reference: kplabs-pl/ESA-ADB commit 27ecde187aa631512cf38a4508474b01ebeb1eda.
 See THIRD_PARTY_LICENSES.md. No time-grid expansion or one-to-one matching.
 """
 from collections import defaultdict
+from statistics import fmean
 
 import portion as P
 
@@ -31,7 +32,8 @@ def prediction_interval(record, window):
     return P.closed(a, b) if a == b or b == window[1] else P.closedopen(a, b)
 
 
-def evaluate(dataset, predictions, category_mode="both"):
+def evaluate_eventwise(dataset, predictions, category_mode="both"):
+    """Reference EW interval core. Public app aggregation is in evaluate()."""
     if category_mode not in CATEGORIES:
         raise DataError("事件类别选择无效")
     window = dataset["window"]
@@ -98,4 +100,74 @@ def evaluate(dataset, predictions, category_mode="both"):
                 input_predictions=[dict(channel=p["channel"], start=iso(p["start"]), end=iso(p["end"])) for p in predictions],
                 label_fragments=[dict(id=r["id"], channel=r["channel"], category=r["category"],
                                       start=iso(r["start"]), end=iso(r["end"]),
-                                      selected=r["category"] in CATEGORIES[category_mode]) for r in labels])
+                                       selected=r["category"] in CATEGORIES[category_mode]) for r in labels])
+
+
+RATE_FIELDS = ("f0_5", "p_event", "tnr", "p_corrected", "recall")
+SUM_FIELDS = ("event_count", "detected_count", "missed_count", "false_positive_count",
+              "nominal_seconds", "false_positive_seconds", "redundant_detections")
+
+
+def evaluate(dataset, predictions, category_mode="both"):
+    """Score each target channel independently, then macro-average defined rates.
+
+    The same event ID on two channels represents two channel-event pairs.
+    Means are per metric, excluding only null values and reporting denominators.
+    Counts/durations are explicitly totals, not event-ID-deduplicated metrics.
+    """
+    channels = list(dict.fromkeys(dataset["channels"]))
+    if not channels:
+        raise DataError("逐通道评分需要非空目标通道列表")
+    if category_mode not in CATEGORIES:
+        raise DataError("事件类别选择无效")
+    if not dataset["window"]:
+        raise DataError("评分需要固定评测窗口")
+    if dataset["config"].get("label_errors"):
+        raise DataError("当前窗口包含无效真实标签，无法评分：" + dataset["config"]["label_errors"][0])
+    labels_by_channel, predictions_by_channel = defaultdict(list), defaultdict(list)
+    for row in dataset["labels"]:
+        if row["channel"] in channels:
+            labels_by_channel[row["channel"]].append(row)
+    for row in predictions:
+        if row["channel"] not in channels or not dataset["window"][0] <= row["start"] <= row["end"] <= dataset["window"][1]:
+            raise DataError("预测未通过当前 Mission 通道与时间范围校验")
+        predictions_by_channel[row["channel"]].append(row)
+    results, event_details, prediction_details = [], [], []
+    for channel in channels:
+        scope = dict(dataset, channels=[channel], labels=labels_by_channel[channel],
+                     config=dict(dataset["config"], target_channels=[channel]))
+        row = evaluate_eventwise(scope, predictions_by_channel[channel], category_mode)
+        results.append(dict(channel=channel, status=row["status"], reasons=row["reasons"],
+                            metrics=row["metrics"], events=row["events"], predictions=row["predictions"]))
+        event_details.extend(dict(event, channel=channel) for event in row["events"])
+        prediction_details.extend(dict(prediction, channel=channel) for prediction in row["predictions"])
+    metrics, valid_counts, excluded = {}, {}, {}
+    for field in RATE_FIELDS:
+        defined = [row["metrics"][field] for row in results if row["metrics"][field] is not None]
+        metrics[field] = fmean(defined) if defined else None
+        valid_counts[field] = len(defined)
+        excluded[field] = [row["channel"] for row in results if row["metrics"][field] is None]
+    metrics.update({field: sum(row["metrics"][field] for row in results) for field in SUM_FIELDS})
+    metrics["unique_event_count"] = len({e["id"] for e in event_details})
+    metrics["unique_detected_event_count"] = len({e["id"] for e in event_details if e["detected"]})
+    warnings = []
+    if excluded["f0_5"]:
+        warnings.append(f"{len(excluded['f0_5'])} 个通道的 F0.5 不适用，未参与 F0.5 宏平均；各指标按自身非 null 通道取均值，分母可能不同。详见逐通道表。")
+    config = {k: v for k,v in dataset["config"].items() if k != "paths"}
+    config.update(target_channels=channels, category_mode=category_mode, selected_categories=CATEGORIES[category_mode],
+        beta=0.5, timezone="UTC", reference=REFERENCE,
+        evaluation_protocol="channel-macro-corrected-eventwise-f0.5/v1",
+        aggregation="channel_macro_mean", scope="same-channel event detection, then arithmetic mean across channels",
+        prediction_endpoints="[start,end); point closed; full_range end closed", ground_truth_endpoints="closed")
+    return dict(status="ok" if metrics["f0_5"] is not None else "not_applicable",
+        reasons=[] if metrics["f0_5"] is not None else ["所有目标通道的 F0.5 均不适用；请查看逐通道原因。"],
+        warnings=warnings, config=config, metrics=metrics,
+        aggregation=dict(method="channel_macro_mean", total_channels=len(channels), valid_channel_counts=valid_counts,
+            excluded_channels=excluded, null_policy="exclude_null_per_metric",
+            score_formula="overall metric = arithmetic mean of each channel's defined metric; F is averaged directly",
+            count_scope="sum of channel-event pairs / channel-local prediction intervals; durations in channel-seconds"),
+        channel_results=results, events=event_details, predictions=prediction_details,
+        input_predictions=[dict(channel=p["channel"], start=iso(p["start"]), end=iso(p["end"])) for p in predictions],
+        label_fragments=[dict(id=r["id"], channel=r["channel"], category=r["category"],
+            start=iso(r["start"]), end=iso(r["end"]), selected=r["category"] in CATEGORIES[category_mode])
+            for r in dataset["labels"] if r["channel"] in channels])

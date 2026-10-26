@@ -45,9 +45,9 @@ def test_three_mission_raw_curves_and_scored_channel_specific_shading(client, mi
     if mission == "Mission1":
         channel, expected = "channel_2", [(12, 18)]
     elif mission == "Mission2":
-        channel, expected = "channel_1", [(42, 48)]
+        channel, expected = "channel_1", [(12, 18)]
     else:
-        channel, expected = "channel_1", [(30, 30), (62, 68)]
+        channel, expected = "channel_4", [(30, 30), (82, 88)]
     chart = request_series(client, scored, channel, date, scored=True).get_json()
     assert chart["has_scored_predictions"]
     assert [(d["start"], d["end"]) for d in chart["detections"]] == expected

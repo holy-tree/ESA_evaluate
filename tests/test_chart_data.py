@@ -91,6 +91,24 @@ def test_state_series_are_not_numerically_smoothed(demo):
     assert all(p[1].is_integer() for c in result["channels"] for s in c["segments"] for p in s)
 
 
+def test_event_navigation_uses_original_start_across_selected_channels(tmp_path):
+    index = pd.date_range("2024-01-01", "2024-01-05", freq="h", tz="UTC")
+    ds = raw_dataset(tmp_path, index, np.arange(len(index)))
+    path = tmp_path / "Mission1" / "channels" / "channel_2.zip"
+    pd.DataFrame({"channel_2": np.arange(len(index))}, index=index).to_pickle(path)
+    ds["channels"].append("channel_2")
+    ds["window"] = (index[0], index[-1])
+    ds["event_ids"] = ["same_event"]
+    ds["labels"] = [dict(id="same_event", channel="channel_1", start=timestamp("2024-01-02T20:00:00Z"), end=timestamp("2024-01-04"), category="Anomaly"),
+                    dict(id="same_event", channel="channel_2", start=timestamp("2024-01-01T22:00:00Z"), end=timestamp("2024-01-04"), category="Anomaly")]
+    store = TelemetryStore()
+    result = build_view(store, ds, ds["channels"], "2024-01-03", "2024-01-04")
+    assert all(c["events"][0]["event_start"] == "2024-01-01T22:00:00Z" for c in result["channels"])
+    assert all(c["events"][0]["intervals"][0]["start_time"] == "2024-01-03T00:00:00Z" for c in result["channels"])
+    only_first = build_view(store, ds, ["channel_1"], "2024-01-03", "2024-01-04")
+    assert only_first["channels"][0]["events"][0]["event_start"] == "2024-01-02T20:00:00Z"
+
+
 def test_checkpoint_union_keeps_prediction_sources_and_point_identity():
     pred = [dict(channel="a", start="2024-01-01T00:00:10Z", end="2024-01-01T00:00:20Z"),
             dict(channel="b", start="2024-01-01T00:00:15Z", end="2024-01-01T00:00:30Z"),

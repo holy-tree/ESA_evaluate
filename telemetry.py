@@ -98,6 +98,7 @@ def event_annotations(dataset, channel, a, b, support, sample_times, category_mo
             for position in range(left, right):
                 memberships[position].append(event_id)
         catalogue.append(dict(id=event_id, key=f"{namespace}|{event_id}", color=colors[event_id],
+            event_start=iso(min(row["start"] for row in rows)),
             category=rows[0]["category"], selected=rows[0]["category"] in CATEGORIES[category_mode], intervals=intervals))
     return catalogue, memberships
 

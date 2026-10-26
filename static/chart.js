@@ -15,6 +15,7 @@
   let data = null, controller = null, serial = 0, timer = null, frame = null, stale = false;
   let checkpoints = [], checkpointIndex = -1, needCheckpoints = true, history = [];
   let hoveredChannel = null, pinnedChannel = null, activeEvent = null, plot = null, hover = null;
+  let hoveredEvent = null, focusedEvent = null, eventPaintOrder = [];
   let waveNodes = new Map(), eventNodes = new Map(), eventMap = new Map(), drag = null, overviewDrag = null;
   let wheelActive = false, wheelEnd = null;
   const categoryNames = {'Anomaly': '异常', 'Rare Event': '罕见正常事件', 'Communication Gap': '通信中断', 'Invalid Segment': '无效片段', 'Invalid': '无效片段'};
@@ -60,6 +61,7 @@
     if (stale) return;
     view = clamp(start, end);
     if (!options.keepCheckpoint) checkpointIndex = -1;
+    if (!options.eventJump) $('chart-event-navigation').hidden = true;
     preset.value = 'custom';
     updateRangeControls(); hideHover(); renderSoon();
     if (!options.keepCheckpoint) checkpointText();
@@ -168,12 +170,32 @@
     if (!target && data) data.channels.forEach(c=>{const g=waveNodes.get(c.channel);if(g)g.parentNode.append(g);});
     document.querySelectorAll('.channel-legend-item').forEach(b => { b.classList.toggle('is-highlighted',b.dataset.channel===target); b.setAttribute('aria-pressed',String(b.dataset.channel===pinnedChannel)); });
     $('chart-highlight-status').textContent=target ? `正在突出显示：${target}（只改变层级、线宽和阴影，不移动数据坐标）` : '悬停通道图例可浮起加粗对应曲线；点击可固定高亮。';
-    for (const [key,nodes] of eventNodes) nodes.forEach(n => { n.style.opacity=!activeEvent || key===activeEvent ? '1' : '.25'; });
+    const raisedEvent=hoveredEvent || focusedEvent;
+    const eventTarget=raisedEvent || activeEvent;
+    for (const [key,nodes] of eventNodes) nodes.forEach(n => {
+      const raised=key===raisedEvent;
+      n.style.opacity=!eventTarget || key===eventTarget ? '1' : '.25';
+      n.classList.toggle('is-event-raised',raised);
+      if(n.classList.contains('event-track-item')){
+        const y=Number(n.dataset.baseY);
+        n.setAttribute('y',raised ? y-3 : y);
+        n.setAttribute('height',raised ? 19 : 13);
+      }
+    });
+    // Restore original paint order first, then lift every fragment of the
+    // hovered identity (including fragments on other selected channels).
+    eventPaintOrder.forEach(n=>n.parentNode?.append(n));
+    if(raisedEvent)eventNodes.get(raisedEvent)?.forEach(n=>n.parentNode?.append(n));
+    document.querySelectorAll('.event-legend-item').forEach(b=>b.classList.toggle('is-event-hovered',b.dataset.eventKey===raisedEvent));
+  }
+  function registerEventNode(key, element) {
+    if(!eventNodes.has(key))eventNodes.set(key,[]);
+    eventNodes.get(key).push(element);eventPaintOrder.push(element);
   }
   function buildLegends() {
     const channels=$('chart-channel-legend'), events=$('chart-event-legend');
     channels.replaceChildren(); events.replaceChildren(); eventMap=new Map();
-    hoveredChannel=null;
+    hoveredChannel=null;hoveredEvent=null;focusedEvent=null;
     if (!data) return;
     for (const c of data.channels) {
       const button=document.createElement('button'); button.type='button'; button.className='channel-legend-item'; button.dataset.channel=c.channel;
@@ -185,18 +207,47 @@
       button.addEventListener('blur',()=>{hoveredChannel=null;applyHighlights();});
       button.addEventListener('click',()=>{pinnedChannel=pinnedChannel===c.channel ? null : c.channel;applyHighlights();});
       channels.append(button);
-      c.events.forEach(e=>eventMap.set(e.key,e));
+      c.events.forEach(e=>{
+        const prior=eventMap.get(e.key);
+        if(!prior)eventMap.set(e.key,{...e,channels:[c.channel]});
+        else {
+          prior.channels.push(c.channel);
+          if(Date.parse(e.event_start)<Date.parse(prior.event_start))prior.event_start=e.event_start;
+        }
+      });
     }
     if(activeEvent && !eventMap.has(activeEvent))activeEvent=null;
     for (const e of eventMap.values()) {
-      const button=document.createElement('button'); button.type='button'; button.className='event-legend-item'; button.dataset.eventId=e.id;
+      const button=document.createElement('button'); button.type='button'; button.className='event-legend-item'; button.dataset.eventId=e.id;button.dataset.eventKey=e.key;
+      button.setAttribute('aria-pressed',String(activeEvent===e.key));
+      button.title=`点击跳到事件起始日并缩小至当天（UTC）：${e.event_start || e.intervals[0]?.start_time}`;
       const swatch=document.createElement('span'); swatch.className='event-swatch'; swatch.style.backgroundColor=e.color;
       button.append(swatch,document.createTextNode(`${e.id} · ${categoryNames[e.category] || e.category}${e.selected ? '' : '（未选类别）'}`));
-      button.addEventListener('click',()=>{activeEvent=activeEvent===e.key ? null : e.key; draw();});
+      button.addEventListener('pointerenter',()=>{hoveredEvent=e.key;applyHighlights();});
+      button.addEventListener('pointerleave',()=>{if(hoveredEvent===e.key)hoveredEvent=null;applyHighlights();});
+      button.addEventListener('focus',()=>{if(button.matches(':focus-visible'))focusedEvent=e.key;applyHighlights();});
+      button.addEventListener('blur',()=>{if(focusedEvent===e.key)focusedEvent=null;applyHighlights();});
+      button.addEventListener('click',()=>jumpToEvent(e));
       events.append(button);
     }
     if (!eventMap.size) events.textContent='当前视窗未匹配有效真实事件标签，不代表已逐点确认正常。';
     $('chart-event-colors').disabled=data.channels.length!==1;
+  }
+  function jumpToEvent(event) {
+    const time=Date.parse(event.event_start || event.intervals[0]?.start_time);
+    if(stale || !Number.isFinite(time))return;
+    const stamp=new Date(time),day=Date.UTC(stamp.getUTCFullYear(),stamp.getUTCMonth(),stamp.getUTCDate());
+    // A calendar day is centered at UTC noon. At the dataset boundary, clip
+    // the day rather than shifting it into a different date to retain 24 h.
+    const start=Math.max(domain[0],day),end=Math.min(domain[1],day+DAY);
+    const target=clamp(start,end);
+    if(target[0]!==view[0] || target[1]!==view[1])remember();
+    activeEvent=event.key;hoveredChannel=null;
+    if(pinnedChannel && !event.channels.includes(pinnedChannel))pinnedChannel=null;
+    setView(start,end,{eventJump:true,delay:0});
+    const message=$('chart-event-navigation');message.hidden=false;
+    const boundaryNote=end<=start?'（末端点使用最小可用视窗）':end-start<DAY?'（数据集边界已裁剪）':'';
+    message.textContent=`已定位真实事件 ${event.id} · ${iso(day).slice(0,10)}（UTC 起始日） · 日视窗 ${iso(view[0])} → ${iso(view[1])}${boundaryNote}；可返回上一视图。`;
   }
   function drawTracks(width) {
     tracks.replaceChildren();
@@ -211,16 +262,15 @@
       c.events.forEach(e=>e.intervals.forEach(i=>{
         const start=Date.parse(i.start_time), end=Date.parse(i.end_time);
         if (end<view[0] || start>view[1]) return;
-        const rect=node('rect',{x:plot.x(Math.max(start,view[0])),y,width:Math.max(3,plot.x(Math.min(end,view[1]))-plot.x(Math.max(start,view[0]))),height:13,rx:2,fill:e.color,'data-event-id':e.id});
+        const rect=node('rect',{x:plot.x(Math.max(start,view[0])),y,width:Math.max(3,plot.x(Math.min(end,view[1]))-plot.x(Math.max(start,view[0]))),height:13,rx:2,fill:e.color,class:'event-track-item','data-base-y':y,'data-event-id':e.id,'data-event-key':e.key});
         rect.append(node('title',{},`${c.channel} | ${e.id} | ${e.category} | ${i.start_time} → ${i.end_time}`));
-        if (!eventNodes.has(e.key)) eventNodes.set(e.key,[]);
-        eventNodes.get(e.key).push(rect); tracks.append(rect);
+        registerEventNode(e.key,rect);tracks.append(rect);
       }));
     });
   }
   function draw() {
     if(stale)return;
-    hideHover(); svg.replaceChildren(); waveNodes=new Map(); eventNodes=new Map();
+    hideHover(); svg.replaceChildren(); waveNodes=new Map(); eventNodes=new Map();eventPaintOrder=[];
     const width=Math.max(900,scroll.clientWidth-2), left=125, right=width-32;
     const {lanes,height}=makeLanes();
     svg.setAttribute('width',width); svg.style.width=`${width}px`; svg.setAttribute('height',height); svg.setAttribute('viewBox',`0 0 ${width} ${height}`);
@@ -271,7 +321,7 @@
             if(timeOf(segment.at(-1))<a || timeOf(segment[0])>b)continue;
             overlay.append(node('path',{d:pathFor(c,segment,lane,a,b),fill:'none',stroke:e.color,class:'event-curve',style:`stroke:${e.color}`}));
           }
-          if(!eventNodes.has(e.key))eventNodes.set(e.key,[]);eventNodes.get(e.key).push(overlay);group.append(overlay);
+          registerEventNode(e.key,overlay);group.append(overlay);
         });
         waves.append(group);
       });

@@ -54,6 +54,7 @@ def main():
     ]
     for name, intervals, mode in cases:
         ds = load_dataset(load_config("Mission1", "demo"))
+        ds["channels"] = ["channel_1"]
         raw = [("a", 10, 20, "Anomaly"), ("b", 40, 50, "Rare Event"),
                ("gap", 60, 70, "Communication Gap"), ("invalid", 80, 90, "Invalid"),
                ("point", 100, 100, "Anomaly")]
@@ -64,7 +65,7 @@ def main():
         if name == "internal-point":
             raw.append(("internal", 30, 30, "Anomaly"))
         ds["labels"] = [dict(id=i, channel="channel_1", start=at(a), end=at(b), category=c) for i,a,b,c in raw]
-        predictions = [dict(channel="channel_2", start=at(a), end=at(b)) for a,b in intervals]
+        predictions = [dict(channel="channel_1", start=at(a), end=at(b)) for a,b in intervals]
         ours = evaluate(ds, predictions, mode)["metrics"]
         # Independently form the official binary sequence (merge overlaps with portion).
         events = P.Interval(*[P.closed(at(a), at(b)) if a == b or b == 100 else P.closedopen(at(a), at(b)) for a,b in intervals])
@@ -93,7 +94,7 @@ def main():
         for upstream, local in (("EW_precision", "p_corrected"), ("EW_recall", "recall"), ("EW_F_0.50", "f0_5")):
             assert np.isclose(expected[upstream], ours[local], rtol=0, atol=1e-12), (name, upstream, expected, ours)
         print(f"PASS {name}: F0.5={ours['f0_5']:.12f}")
-    print(f"Official cross-check passed: {len(cases)} cases, reference {COMMIT}")
+    print(f"Official single-channel core cross-check passed: {len(cases)} cases, reference {COMMIT}")
 
 
 if __name__ == "__main__":

@@ -44,7 +44,7 @@
   document.querySelectorAll('.context-select').forEach(select => {
     select.addEventListener('change', () => {
       if ((dirty || rows.children.length || data.has_result || document.querySelector('#upload-token').value) &&
-          !window.confirm('切换评测配置后，旧输入、CSV 校验与分数不再适用，将清空。继续吗？')) {
+          !window.confirm('切换评测配置后，旧输入、CSV／JSON 校验与分数不再适用，将清空。继续吗？')) {
         select.value = select.dataset.previous; return;
       }
       const params = new URLSearchParams();
@@ -56,10 +56,23 @@
   });
   document.querySelectorAll('.score-config').forEach(input => input.addEventListener('input', () => invalidate(true)));
   document.querySelector('#prediction-csv').addEventListener('change', () => invalidate(true));
+  document.querySelector('#prediction-json').addEventListener('change', () => invalidate(true));
+  function showMode(value) {
+    document.querySelector('#manual-input').hidden = value !== 'manual';
+    document.querySelector('#csv-input').hidden = value === 'manual';
+    ['csv', 'json'].forEach(format => {
+      const input = document.querySelector(`#prediction-${format}`);
+      input.hidden = value !== format; input.disabled = value !== format;
+    });
+    document.querySelectorAll('[data-upload-format]').forEach(node => { node.hidden = node.dataset.uploadFormat !== value; });
+  }
   document.querySelectorAll('[name=mode]').forEach(radio => radio.addEventListener('change', () => {
-    document.querySelector('#manual-input').hidden = radio.value !== 'manual';
-    document.querySelector('#csv-input').hidden = radio.value !== 'csv'; invalidate(true);
+    showMode(radio.value);
+    document.querySelector('#prediction-csv').value = '';
+    document.querySelector('#prediction-json').value = '';
+    invalidate(true);
   }));
+  showMode(form.querySelector('[name=mode]:checked')?.value || 'manual');
   document.querySelector('#load-example').addEventListener('click', async () => {
     const params = new URLSearchParams({mission: document.querySelector('#mission').value,
       source: document.querySelector('#source').value, version: data.version});

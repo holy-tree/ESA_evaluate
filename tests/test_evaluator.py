@@ -3,7 +3,7 @@ import json
 import pytest
 
 from datasets import DataError
-from evaluator import evaluate
+from evaluator import evaluate_eventwise as evaluate
 from conftest import at, predictions, synthetic
 
 

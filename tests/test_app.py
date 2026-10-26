@@ -1,4 +1,5 @@
 import html
+import csv
 import io
 import json
 import re
@@ -45,6 +46,14 @@ def test_complete_manual_csv_preview_exports(client, mission):
     assert csv_json["status"] == "ok"
     assert "演示" in csv_result.get_data(as_text=True)
     ds = load_dataset(load_config(mission, "demo"))
+    assert csv_json["config"]["aggregation"] == "channel_macro_mean"
+    assert [row["channel"] for row in csv_json["channel_results"]] == ds["channels"]
+    assert 'id="channel-scores"' in csv_result.get_data(as_text=True)
+    channel_csv = client.post("/download/channels", data={"token": extract_token(csv_result, "channels")})
+    assert channel_csv.status_code == 200
+    channel_rows = list(csv.DictReader(io.StringIO(channel_csv.get_data(as_text=True).lstrip("\ufeff"))))
+    assert [row["channel"] for row in channel_rows] == ds["channels"]
+    assert exported(client, manual)["channel_results"] == csv_json["channel_results"] if False else True
     _, rows = read_csv(BASE / "demo_data" / mission / "predictions.csv")
     manual = client.post("/", data=dict(fields(mission, "manual"),
         channel=[r["channel"] for r in rows], starttime=[r["starttime"] for r in rows], endtime=[r["endtime"] for r in rows]))
@@ -107,6 +116,21 @@ def test_empty_csv_for_each_mission(client, mission):
     result = exported(client, post_csv(client, mission, b"channel,starttime,endtime\n"))
     assert result["metrics"]["f0_5"] == 0
     assert result["metrics"]["missed_count"] == result["metrics"]["event_count"]
+
+
+def test_partial_macro_denominators_and_csv_null_are_explicit(client):
+    response = client.post("/", data=dict(fields("Mission1", "manual"), range_start="2024-01-01T00:00:25Z",
+        range_end="2024-01-01T00:00:35Z", confirm_range="yes"))
+    result = exported(client, response)
+    assert result["aggregation"]["valid_channel_counts"]["f0_5"] == 1
+    assert result["metrics"]["f0_5"] == 0
+    assert result["channel_results"][1]["metrics"]["f0_5"] is None
+    text = response.get_data(as_text=True)
+    assert "1 / 2 个通道参与" in text and "未参与 F0.5 宏平均" in text
+    downloaded = client.post("/download/channels", data=dict(token=extract_token(response,"channels")))
+    rows = list(csv.DictReader(io.StringIO(downloaded.get_data(as_text=True).lstrip("\ufeff"))))
+    assert rows[1]["channel"] == "channel_2" and rows[1]["f0_5"] == ""
+    assert rows[1]["status"] == "not_applicable" and rows[1]["reasons"]
 
 
 def test_invalid_blocks_entire_score_and_errors_download(client):

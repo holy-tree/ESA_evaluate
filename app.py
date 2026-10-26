@@ -17,7 +17,7 @@ from datasets import BASE, CATEGORIES, MISSIONS, DataError, load_config, load_da
 from evaluator import evaluate
 from chart_data import build_view, navigation_range
 from telemetry import TelemetryStore
-from validation import parse_csv, validate_records
+from validation import parse_csv, parse_json, validate_records
 
 
 def create_app(test_config=None):
@@ -33,7 +33,7 @@ def create_app(test_config=None):
     )
     if test_config:
         app.config.update(test_config)
-    # Signed preview includes the complete upload, not just the first 100 rows.
+    # Signed preview includes the complete CSV/JSON, not just the first 100 rows.
     app.config.setdefault("MAX_CONTENT_LENGTH", app.config["MAX_CSV_BYTES"] * 4 + 1024 * 1024)
     if app.config["MAX_CONTENT_LENGTH"] is None:
         app.config["MAX_CONTENT_LENGTH"] = app.config["MAX_CSV_BYTES"] * 4 + 1024 * 1024
@@ -84,7 +84,7 @@ def create_app(test_config=None):
             view["rows"] = [dict(channel=c, starttime=starts[i] if i < len(starts) else "",
                                  endtime=ends[i] if i < len(ends) else "") for i, c in enumerate(channels)]
         try:
-            if category not in CATEGORIES or mode not in ("manual", "csv"):
+            if category not in CATEGORIES or mode not in ("manual", "csv", "json"):
                 raise DataError("事件类别或输入模式无效")
             if request.method == "POST" and not values.get("version"):
                 raise DataError("缺少数据版本，请重新加载页面")
@@ -109,22 +109,25 @@ def create_app(test_config=None):
                 view["rows"] = [dict(channel=dataset["channels"][0], starttime="", endtime="")]
             else:
                 context = fingerprint(dataset, category)
-                if mode == "csv":
-                    upload = request.files.get("prediction_csv")
+                if mode in ("csv", "json"):
+                    upload = request.files.get(f"prediction_{mode}")
                     if upload and upload.filename:
                         content = upload.read(app.config["MAX_CSV_BYTES"] + 1)
-                        filename = secure_filename(upload.filename) or "predictions.csv"
+                        filename = secure_filename(upload.filename) or f"predictions.{mode}"
                     elif values.get("upload_token"):
                         saved = unseal(values["upload_token"], "upload")
                         if saved["context"] != context:
                             raise DataError("Mission、版本、类别、窗口或标签已变化；旧预览失效，请重新上传校验")
+                        if saved.get("format", "csv") != mode:
+                            raise DataError("输入格式已变化，旧预览失效，请按当前 CSV／JSON 模式重新上传")
                         filename = saved["filename"]
                         content = base64.b64decode(saved["content"])
                     else:
-                        raise DataError("请选择预测 CSV 文件（空预测可上传只有合法表头的文件）")
-                    report = parse_csv(content, filename, dataset, app.config["MAX_CSV_BYTES"], app.config["MAX_RECORDS"])
+                        raise DataError("请选择预测 CSV 文件（空预测可上传只有合法表头的文件）" if mode == "csv" else "请选择预测 JSON 文件（空预测可上传 []）")
+                    parser = parse_csv if mode == "csv" else parse_json
+                    report = parser(content, filename, dataset, app.config["MAX_CSV_BYTES"], app.config["MAX_RECORDS"])
                     if len(content) <= app.config["MAX_CSV_BYTES"]:
-                        view["upload_token"] = seal("upload", dict(context=context, filename=filename,
+                        view["upload_token"] = seal("upload", dict(context=context, filename=filename, format=mode,
                                                                  content=base64.b64encode(content).decode("ascii")))
                 else:
                     report = validate_records(view["rows"], dataset, app.config["MAX_RECORDS"])
@@ -218,14 +221,22 @@ def create_app(test_config=None):
         if mission not in MISSIONS or kind not in ("template", "predictions"):
             return "示例文件不存在", 404
         return send_file(BASE / "demo_data" / mission / f"{kind}.csv", as_attachment=True,
-                         download_name=f"DEMO-{mission}-{kind}.csv", mimetype="text/csv")
+                          download_name=f"DEMO-{mission}-{kind}.csv", mimetype="text/csv")
+
+    @app.get("/demo/<mission>/<kind>.json")
+    def demo_json(mission, kind):
+        if mission not in MISSIONS or kind not in ("template", "predictions"):
+            return "示例文件不存在", 404
+        _, rows = read_csv(BASE / "demo_data" / mission / f"{kind}.csv")
+        return Response(json.dumps(rows, ensure_ascii=False, indent=2), mimetype="application/json",
+                        headers={"Content-Disposition": f'attachment; filename="DEMO-{mission}-{kind}.json"'})
 
     @app.post("/download/<kind>")
     def download(kind):
         try:
             if kind == "errors":
                 errors = unseal(request.form.get("token", ""), "errors")
-                return csv_response("validation-errors.csv", ["line", "message"],
+                return csv_response("validation-errors.csv", ["line_or_record", "message"],
                                     [[e["line"], e["message"]] for e in errors])
             result = unseal(request.form.get("token", ""), "result")
             cfg = result["config"]
@@ -234,16 +245,23 @@ def create_app(test_config=None):
                 return Response(json.dumps(result, ensure_ascii=False, indent=2, allow_nan=False),
                                 mimetype="application/json", headers={"Content-Disposition": f'attachment; filename="{secure_filename(filename)}.json"'})
             if kind == "events":
-                return csv_response(filename + "-events.csv", ["mission", "version", "source", "ID", "Category", "channels", "detected", "intervals"],
-                                    [[cfg["mission_id"], cfg["version"], cfg["source"], e["id"], e["category"],
-                                      ";".join(e["channels"]), e["detected"], json.dumps(e["intervals"])] for e in result["events"]])
+                return csv_response(filename + "-events.csv", ["mission", "version", "source", "channel", "ID", "Category", "detected", "intervals"],
+                                    [[cfg["mission_id"], cfg["version"], cfg["source"], e.get("channel", ";".join(e["channels"])), e["id"], e["category"],
+                                      e["detected"], json.dumps(e["intervals"])] for e in result["events"]])
+            if kind == "channels":
+                if "channel_results" not in result:
+                    raise DataError("评分协议已更新，请重新评测后导出逐通道结果")
+                fields = ["f0_5", "p_event", "tnr", "p_corrected", "recall", "event_count", "detected_count", "missed_count", "false_positive_count", "nominal_seconds", "false_positive_seconds"]
+                return csv_response(filename + "-channels.csv", ["mission", "version", "source", "channel", "status", *fields, "reasons"],
+                    [[cfg["mission_id"], cfg["version"], cfg["source"], row["channel"], row["status"],
+                      *[row["metrics"][key] for key in fields], "; ".join(row["reasons"])] for row in result["channel_results"]])
             raise DataError("下载格式无效")
         except DataError as exc:
             return render_template("error.html", message=str(exc)), 400
 
     @app.errorhandler(RequestEntityTooLarge)
     def too_large(_):
-        return render_template("error.html", message=f"请求体超过上限。CSV 文件上限 {app.config['MAX_CSV_BYTES']} 字节，记录上限 {app.config['MAX_RECORDS']}；请缩小文件后重试。"), 413
+        return render_template("error.html", message=f"请求体超过上限。CSV／JSON 文件上限 {app.config['MAX_CSV_BYTES']} 字节，记录上限 {app.config['MAX_RECORDS']}；请缩小文件后重试。"), 413
 
     @app.after_request
     def no_cache(response):

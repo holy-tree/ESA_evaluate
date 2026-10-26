@@ -1,6 +1,7 @@
-"""Shared manual/CSV validation, with no silent removal of invalid records."""
+"""Shared manual/CSV/JSON validation; invalid records always block scoring."""
 import csv
 import io
+import json
 
 from datasets import iso, timestamp
 
@@ -8,7 +9,7 @@ FIELDS = ("channel", "starttime", "endtime")
 
 
 def validate_records(rows, dataset, max_records=100000):
-    report = dict(filename=None, raw_count=len(rows), valid_count=0, duplicate_count=0,
+    report = dict(filename=None, input_format="manual", raw_count=len(rows), valid_count=0, duplicate_count=0,
                   channel_count=0, coverage=None, errors=[], warnings=[], preview=[], records=[])
     if len(rows) > max_records:
         report["errors"].append(dict(line=0, message=f"记录数量超过上限 {max_records}"))
@@ -16,7 +17,7 @@ def validate_records(rows, dataset, max_records=100000):
     seen, channels, starts, ends = set(), set(), [], []
     for index, row in enumerate(rows, 1):
         line = row.get("_line", index)
-        item = {key: str(row.get(key, "")).strip() for key in FIELDS}
+        item = {key: "" if row.get(key) is None else str(row.get(key, "")).strip() for key in FIELDS}
         errors = [row["_error"]] if row.get("_error") else []
         if any(not item[k] for k in FIELDS):
             errors.append("必需字段不能为空（channel,starttime,endtime）")
@@ -83,9 +84,72 @@ def parse_csv(content, filename, dataset, max_bytes=5 * 1024 * 1024, max_records
         except (UnicodeError, csv.Error, ValueError) as exc:
             error = f"CSV 解析失败：{exc}（支持 UTF-8 / UTF-8 BOM）"
     if error:
-        return dict(filename=filename, raw_count=len(rows), valid_count=0, duplicate_count=0,
+        return dict(filename=filename, input_format="csv", raw_count=len(rows), valid_count=0, duplicate_count=0,
                     channel_count=0, coverage=None, errors=[dict(line=0, message=error)],
                     warnings=[], preview=[], records=[])
     report = validate_records(rows, dataset, max_records)
     report["filename"] = filename
+    report["input_format"] = "csv"
+    return report
+
+
+class _JSONObject(dict):
+    """Normalize keys while detecting exact and case/whitespace duplicates."""
+    def __init__(self, pairs):
+        super().__init__()
+        self.duplicate_keys = []
+        for key,value in pairs:
+            key = key.strip().lower()
+            if key in self:
+                self.duplicate_keys.append(key)
+            self[key] = value
+
+
+def parse_json(content, filename, dataset, max_bytes=5 * 1024 * 1024, max_records=100000):
+    def failure(message):
+        return dict(filename=filename, input_format="json", raw_count=0, valid_count=0, duplicate_count=0,
+                    channel_count=0, coverage=None, errors=[dict(line=0, message=message)],
+                    warnings=[], preview=[], records=[])
+
+    if len(content) > max_bytes:
+        return failure(f"JSON 文件超过大小上限 {max_bytes} 字节")
+    def reject_constant(value):
+        raise ValueError(f"JSON 不允许使用 {value} 常量")
+    try:
+        document = json.loads(content.decode("utf-8-sig"), object_pairs_hook=_JSONObject, parse_constant=reject_constant)
+    except json.JSONDecodeError as exc:
+        return failure(f"JSON 解析失败：第 {exc.lineno} 行、第 {exc.colno} 列，{exc.msg}")
+    except (UnicodeError, ValueError, RecursionError) as exc:
+        return failure(f"JSON 解析失败：{exc}（支持 UTF-8 / UTF-8 BOM）")
+    if isinstance(document, dict):
+        if document.duplicate_keys:
+            return failure("JSON 顶层字段名重复：" + ", ".join(document.duplicate_keys))
+        if "predictions" not in document:
+            return failure('JSON 顶层必须是预测对象数组，或 {"predictions": [...]}')
+        document = document["predictions"]
+    if not isinstance(document, list):
+        return failure('JSON 预测记录必须是数组，例如 [] 或 [{"channel": ..., "starttime": ..., "endtime": ...}]')
+    if len(document) > max_records:
+        report = validate_records(document, dataset, max_records)
+        report.update(filename=filename, input_format="json")
+        return report
+    rows = []
+    for index,row in enumerate(document, 1):
+        errors = []
+        if not isinstance(row, dict):
+            row = {}
+            errors.append("每条 JSON 预测记录必须是对象")
+        duplicates = getattr(row, "duplicate_keys", [])
+        if duplicates:
+            errors.append("字段名去空格并忽略大小写后重复：" + ", ".join(duplicates))
+        missing = [key for key in FIELDS if key not in row]
+        if missing:
+            errors.append("缺少必需字段：" + ", ".join(missing))
+        invalid_types = [key for key in FIELDS if key in row and not isinstance(row[key], str)]
+        if invalid_types:
+            errors.append("必需字段须为字符串：" + ", ".join(invalid_types))
+        # Do not trust uploaded ID, _line, _error, Mission or other extra fields.
+        rows.append(dict({key: row.get(key, "") for key in FIELDS}, _line=index, _error="；".join(errors)))
+    report = validate_records(rows, dataset, max_records)
+    report.update(filename=filename, input_format="json")
     return report
