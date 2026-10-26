@@ -15,6 +15,8 @@ from werkzeug.utils import secure_filename
 
 from datasets import BASE, CATEGORIES, MISSIONS, DataError, load_config, load_dataset, read_csv, timestamp
 from evaluator import evaluate
+from chart_data import build_view, navigation_range
+from telemetry import TelemetryStore
 from validation import parse_csv, validate_records
 
 
@@ -26,6 +28,8 @@ def create_app(test_config=None):
         MAX_CSV_BYTES=int(os.environ.get("ESA_MAX_CSV_BYTES", 5 * 1024 * 1024)),
         MAX_RECORDS=int(os.environ.get("ESA_MAX_RECORDS", 100000)),
         TOKEN_MAX_AGE=3600,
+        CHART_MAX_POINTS=8000,
+        CHART_CACHE_BYTES=int(os.environ.get("ESA_CHART_CACHE_BYTES", 512 * 1024 * 1024)),
     )
     if test_config:
         app.config.update(test_config)
@@ -37,6 +41,7 @@ def create_app(test_config=None):
     # which would reject a valid large signed CSV preview on the second POST.
     app.config["MAX_FORM_MEMORY_SIZE"] = app.config["MAX_CONTENT_LENGTH"]
     signer = URLSafeTimedSerializer(app.config["SECRET_KEY"], salt="esa-evaluation-v1")
+    telemetry = TelemetryStore(app.config["CHART_CACHE_BYTES"])
 
     def config_for(mission, source, version=None):
         return load_config(mission, source, version, app.config["CONFIG_DIR"], app.config["SETTINGS_FILE"])
@@ -69,7 +74,7 @@ def create_app(test_config=None):
         category, mode = values.get("category", "both"), values.get("mode", "manual")
         view = dict(missions=MISSIONS, mission=mission, source=source, category=category, mode=mode,
                     cfg=None, dataset=None, error=None, report=None, result=None, result_token=None,
-                    upload_token="", errors_token=None, rows=[], timeline=[],
+                    upload_token="", errors_token=None, rows=[], chart=None,
                     range_start=values.get("range_start", ""), range_end=values.get("range_end", ""),
                     range_confirmed=values.get("confirm_range") == "yes",
                     max_bytes=app.config["MAX_CSV_BYTES"], max_records=app.config["MAX_RECORDS"])
@@ -130,11 +135,71 @@ def create_app(test_config=None):
                     result = evaluate(dataset, report["records"], category)
                     result["input_summary"] = {k: v for k, v in report.items() if k not in ("records", "preview")}
                     result["input_mode"] = mode
-                    view.update(result=result, result_token=seal("result", result), timeline=make_timeline(result))
+                    result["data_fingerprint"] = context
+                    result["navigation_range"] = navigation_range(cfg, dataset["window"])
+                    view.update(result=result, result_token=seal("result", result))
         except (DataError, OSError) as exc:
             prefix = "真实数据未配置或配置不完整：" if source == "real" else "配置或输入错误："
             view["error"] = prefix + str(exc)
+        if view["dataset"] and view["dataset"]["window"]:
+            ds = view["dataset"]
+            cfg = ds["config"]
+            bounds = navigation_range(config_for(mission, source, cfg["version"]), ds["window"])
+            chart_scope = dict(mission=mission, source=source, version=cfg["version"], category=category,
+                                start=cfg["start"], end=cfg["end"], custom_range=cfg.get("custom_range", False),
+                               fingerprint=fingerprint(ds, category), navigation_range=bounds)
+            first = view["result"]["input_predictions"][0] if view["result"] and view["result"]["input_predictions"] else None
+            view["chart"] = dict(token=seal("chart", chart_scope), start=cfg["start"], end=cfg["end"],
+                                 navigation_start=bounds[0], navigation_end=bounds[1],
+                                 channel=first["channel"] if first else ds["channels"][0],
+                                 date=(first["start"] if first else cfg["start"])[:10])
         return render_template("index.html", **view)
+
+    @app.post("/api/series")
+    def raw_series():
+        """A read-only display request; signed scope never changes scoring settings."""
+        try:
+            values = request.get_json(silent=True)
+            if not isinstance(values, dict):
+                raise DataError("曲线请求必须为 JSON")
+            kind = values.get("kind", "chart")
+            if kind not in ("chart", "result"):
+                raise DataError("曲线凭据类型无效")
+            payload = unseal(values.get("token", ""), kind)
+            predictions = []
+            if kind == "result":
+                saved = payload["config"]
+                scope = dict(mission=saved["mission_id"], source=saved["source"], version=saved["version"],
+                             category=saved["category_mode"], start=saved["start"], end=saved["end"],
+                             custom_range=saved.get("custom_range", False), fingerprint=payload.get("data_fingerprint"),
+                             navigation_range=payload.get("navigation_range"))
+                predictions = payload["input_predictions"]
+            else:
+                scope = payload
+            cfg = config_for(scope["mission"], scope["source"], scope["version"])
+            kwargs = dict(start=scope["start"], end=scope["end"], confirmed=True) if scope["custom_range"] else {}
+            ds = load_dataset(cfg, require_range=False, **kwargs)
+            if not ds["window"] or fingerprint(ds, scope["category"]) != scope["fingerprint"]:
+                raise DataError("Mission、版本、标签或评测窗口已变化，请刷新页面并重新校验；旧图表已失效")
+            if "channels" in values or "view_start" in values or "view_end" in values:
+                bounds = navigation_range(cfg, ds["window"])
+                if scope.get("navigation_range") and scope["navigation_range"] != bounds:
+                    raise DataError("数据集完整观测范围已变化，请刷新图表")
+                full_cfg = dict(cfg, start=bounds[0], end=bounds[1])
+                full_ds = load_dataset(full_cfg, require_range=False)
+                full_ds["evaluation_window"] = ds["window"]
+                chart = build_view(telemetry, full_ds, values.get("channels"), values.get("view_start"), values.get("view_end"),
+                    predictions, values.get("display_mode", "auto"), values.get("bandwidth_seconds"),
+                    values.get("pixel_width", 1000), app.config["CHART_MAX_POINTS"], scope["category"],
+                    bool(values.get("include_checkpoints")))
+                chart["has_scored_predictions"] = kind == "result"
+                return chart
+            chart = telemetry.window(ds, values.get("channel"), values.get("date", scope["start"][:10]),
+                                     values.get("scale", "day"), predictions, app.config["CHART_MAX_POINTS"], scope["category"])
+            chart["has_scored_predictions"] = kind == "result"
+            return chart
+        except (DataError, OSError, ValueError, TypeError) as exc:
+            return dict(error=str(exc)), 400
 
     @app.get("/example")
     def example():
@@ -198,20 +263,6 @@ def csv_response(filename, header, rows):
         writer.writerow(["'" + v if isinstance(v, str) and v[:1] in ("=", "+", "-", "@") else v for v in row])
     return Response("\ufeff" + text.getvalue(), mimetype="text/csv; charset=utf-8",
                     headers={"Content-Disposition": f'attachment; filename="{secure_filename(filename)}"'})
-
-
-def make_timeline(result):
-    cfg = result["config"]
-    a, b = timestamp(cfg["start"]).value, timestamp(cfg["end"]).value
-    bars = []
-    for lane, rows in (("truth", result["label_fragments"]), ("prediction", result["input_predictions"])):
-        for row in rows:
-            start, end = timestamp(row["start"]).value, timestamp(row["end"]).value
-            bars.append(dict(x=60 + 900 * (start-a)/(b-a), width=900 * (end-start)/(b-a),
-                             point=start == end, y=35 if lane == "truth" else 85,
-                             channel=row["channel"], kind=lane if row.get("selected", True) else "excluded",
-                             title=f"{row.get('id', '预测')} | {row['channel']} | {row.get('category', '')} | {row['start']} → {row['end']}"))
-    return bars
 
 
 app = create_app()

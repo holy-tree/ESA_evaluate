@@ -1,0 +1,60 @@
+.chart-toolbar{display:flex;align-items:flex-end;flex-wrap:wrap;gap:12px;margin-bottom:15px}
+.chart-toolbar>label{min-width:150px;flex:0 1 205px}
+.chart-processing{padding:13px;background:#f7f9fd;border:1px solid var(--line);border-radius:8px}
+.chart-processing>.checkbox{flex:0 1 auto;margin:0 0 9px}
+.chart-navigation,.chart-checkpoints{display:flex;align-items:center;flex-wrap:wrap;gap:8px}
+.chart-checkpoints{padding:4px 0 10px}
+.chart-checkpoints .muted{flex:1 1 260px}
+details.chart-channel-picker{position:relative;margin:0;min-width:190px}
+.chart-channel-picker>summary{border:1px solid #cfdbe8;border-radius:7px;padding:10px 12px;background:white;font-size:13px;color:var(--ink)}
+.channel-picker-body{position:absolute;top:100%;left:0;z-index:30;width:330px;max-width:calc(100vw - 44px);padding:14px;background:#fff;border:1px solid var(--line);border-radius:8px;box-shadow:0 10px 30px #19355726}
+.channel-options{max-height:230px;overflow-y:auto;padding:8px 0}
+.channel-options label{display:flex;align-items:center;gap:9px;padding:4px;font-size:12px;font-weight:400}
+.channel-options input{margin:0}
+.channel-picker-body .toolbar{gap:4px;margin:4px 0 0}
+.channel-picker-body button{padding:7px 9px}
+.chart-legend,.chart-channel-legend{display:flex;flex-wrap:wrap;gap:10px 18px;color:var(--muted);font-size:12px;margin:12px 0}
+.chart-legend span{display:inline-flex;align-items:center;gap:7px}
+.detection-key:before{content:'';width:20px;height:13px;background:rgba(210,95,95,.1);border-radius:2px}
+.range-key:before{content:'';width:20px;height:13px;background:rgba(37,99,235,.12);border-radius:2px}
+#raw-visualization{min-width:0}
+.raw-chart-scroll{display:block;width:100%;max-width:100%;max-height:760px;overflow:auto;overscroll-behavior:contain;border:1px solid var(--line);border-radius:8px;background:#fcfdff;scrollbar-gutter:stable}
+.raw-chart{display:block;max-width:none;font-family:"Segoe UI","Microsoft YaHei",sans-serif;touch-action:none;user-select:none}
+.chart-grid line{stroke:#e3eaf3;stroke-width:1}
+.chart-grid text{fill:#536a83;font-size:11px;stroke:none}
+.raw-curve,.event-curve{fill:none;stroke-width:2.2;vector-effect:non-scaling-stroke;stroke-linejoin:round;stroke-linecap:round;stroke-opacity:1}
+.event-curve{stroke-width:3}
+.series-layer{transition:opacity .12s}
+.series-layer.is-highlighted .raw-curve,.series-layer.is-highlighted .event-curve{stroke-width:4;filter:drop-shadow(0 2px 2px #0f294449)}
+.quantile-envelope{opacity:.11;stroke:none}
+.extrema-envelope{opacity:.045;stroke:none}
+.detection-shadow{fill:rgba(210,95,95,.1);stroke:none}
+.outside-evaluation{fill:#e1e7ef;opacity:.6}
+.outside-label{fill:#708297;font-size:11px}
+.chart-hit-area{fill:transparent;cursor:grab}
+.chart-hit-area:active{cursor:grabbing}
+.hover-guide{stroke:#94a3b8;stroke-width:1;stroke-dasharray:3 4}
+.hover-marker{fill:white;stroke-width:2.5;vector-effect:non-scaling-stroke}
+.chart-event-legend{display:flex;flex-wrap:wrap;gap:7px;max-height:100px;overflow-y:auto;margin:0 0 12px;color:var(--muted);font-size:12px}
+.event-legend-item,.channel-legend-item{display:inline-flex;align-items:center;gap:7px;padding:5px 9px;border:1px solid var(--line);background:#fff;color:#435a74;font-size:11px;font-weight:400}
+.event-legend-item:hover,.channel-legend-item:hover,.channel-legend-item.is-highlighted{background:#eef3fa;border-color:#8fa9c5}
+.channel-legend-item.is-highlighted{box-shadow:0 3px 8px #173a5b22;transform:translateY(-1px)}
+.event-swatch{width:20px;height:4px;flex-shrink:0;border-radius:2px}
+.empty-chart{fill:#8a6470;font-size:14px}
+.chart-readout{display:block;min-height:42px;padding:8px 0;color:#4c6079;font-size:12px;overflow-wrap:anywhere}
+.event-track-scroll{max-height:180px;overflow-y:auto;min-width:900px;border-top:1px solid var(--line)}
+#chart-event-tracks{display:block;max-width:none;font-family:"Segoe UI","Microsoft YaHei",sans-serif}
+.track-label{fill:#5c718a;font-size:10px}
+.track-axis{stroke:#e1e8f2;stroke-width:1}
+.overview-heading{display:flex;align-items:center;flex-wrap:wrap;gap:10px;justify-content:space-between;margin:10px 0 5px}
+.overview-heading strong{font-size:12px}
+#chart-overview{display:block;width:100%;border:1px solid var(--line);border-radius:7px;background:#fafcff;touch-action:none;user-select:none}
+.overview-domain{fill:#edf2f8;stroke:#d8e2f0}
+.overview-evaluation{fill:#dce8f9}
+.overview-prediction{stroke:#d97706;stroke-width:1.5;opacity:.75}
+.overview-window{fill:#2563eb12;stroke:#2563eb;stroke-width:1.6;cursor:grab}
+.overview-handle{fill:#2563eb;rx:2;cursor:ew-resize}
+.overview-label{fill:#718096;font-size:10px}
+.checkpoint-highlight{animation:checkpointPulse 1.2s ease-in-out}
+@keyframes checkpointPulse{0%,100%{opacity:1}50%{opacity:.3}}
+@media(max-width:760px){.chart-toolbar>label{flex:1 1 140px}.chart-navigation{width:100%}.chart-navigation button{flex:1}.chart-channel-picker{flex:1}.raw-chart-scroll{max-height:650px}.chart-checkpoints button{padding:8px 10px}}

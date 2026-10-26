@@ -4,6 +4,7 @@
   <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
   <title>ESA · 异常检测评测台</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='chart.css') }}">
   <script defer src="{{ url_for('static', filename='app.js') }}"></script>
 </head>
 <body>
@@ -54,6 +55,33 @@
       <div class="submit-row"><span>主分数评价事件发现能力，不代表通道定位准确率。</span><button class="primary" type="submit" name="action" value="evaluate">开始评测 →</button></div>
     </section>
   </form>
+  {% if chart %}
+  <section id="raw-visualization" class="panel" aria-labelledby="raw-chart-title">
+    <div class="section-heading"><h2 id="raw-chart-title">原始数据曲线与检测区间</h2><span class="badge {{ 'demo' if source == 'demo' else '' }}">{{ '演示合成序列 · 非真实 ESA' if source == 'demo' else '真实 ESA 原始序列' }}</span></div>
+    <div class="chart-toolbar">
+      <details class="chart-channel-picker"><summary>选择通道 · <span id="chart-channel-count">1</span> 个</summary><div class="channel-picker-body"><input id="chart-channel-search" type="search" placeholder="搜索通道" aria-label="搜索图表通道"><div id="chart-channels" class="channel-options">{% for c in dataset.channels %}<label><input type="checkbox" value="{{ c }}" {{ 'checked' if c == chart.channel }}>{{ c }}</label>{% endfor %}</div><div class="toolbar"><button type="button" id="chart-select-all" class="quiet">全选</button><button type="button" id="chart-select-first" class="quiet">仅保留首个</button><button type="button" id="chart-apply-channels" class="secondary">应用通道</button></div></div></details>
+      <label>快捷视野（滚轮连续缩放）<select id="chart-scale"><option value="custom">连续视窗</option><option value="full">全部历史</option><option value="year">约一年</option><option value="month">约一月</option><option value="week">约一周</option><option value="day">约一天</option><option value="hour">约一小时</option></select></label>
+      <label>定位时间 · UTC<input type="datetime-local" step="1" id="chart-date"></label>
+      <div class="chart-navigation"><button type="button" id="chart-previous" class="secondary">← 平移</button><button type="button" id="chart-next" class="secondary">平移 →</button><button type="button" id="chart-refresh" class="secondary">重新加载</button></div>
+    </div>
+    <div class="chart-toolbar chart-processing"><label>显示处理<select id="chart-display"><option value="auto">自动：远景聚合／近景原始</option><option value="raw">原始折线（保极值抽样）</option><option value="aggregate">时间桶中位数 + 范围带</option><option value="moving">时间窗移动平均</option><option value="kernel">高斯核平滑</option></select></label><label>平滑窗口／带宽（秒）<input id="chart-bandwidth" type="number" min="0.001" step="any" placeholder="空为视窗跨度的 1/50"></label><label>多通道纵轴<select id="chart-layout"><option value="normalized">参考标准化叠加</option><option value="raw">原始值叠加（注意单位）</option><option value="lanes">分通道泳道</option></select></label><label class="checkbox"><input id="chart-extrema" type="checkbox" checked>显示极值包络</label><label class="checkbox"><input id="chart-event-colors" type="checkbox" checked>单通道按真实事件着色</label></div>
+    <div class="chart-checkpoints"><button type="button" id="chart-pred-previous" class="secondary" disabled>上一预测 K</button><button type="button" id="chart-pred-next" class="secondary" disabled>下一预测 J</button><button type="button" id="chart-pred-focus" class="secondary" disabled>聚焦当前检查点</button><button type="button" id="chart-back" class="quiet" disabled>返回上一视图</button><span id="chart-checkpoint-status" class="muted">评测后可导航已选通道的预测区间。</span></div>
+    <div class="chart-legend"><span class="detection-key">预测区间（淡红色带）</span><span class="range-key">P5–P95 波动带／可选极值包络</span><span>多通道按通道配色；单通道可按事件配色；灰底为本次评分范围之外。</span></div>
+    <div id="chart-channel-legend" class="chart-channel-legend" role="group" aria-label="通道颜色图例"></div><p id="chart-highlight-status" class="muted" aria-live="polite">悬停通道图例可浮起加粗对应曲线。</p>
+    <div id="chart-event-legend" class="chart-event-legend" role="group" aria-label="事件颜色图例"></div>
+    <p id="chart-status" class="muted" role="status" aria-live="polite">正在读取当前时间窗口；真实通道首次加载需要解压一个通道文件。</p>
+    <div id="chart-error" class="alert error" role="alert" hidden></div>
+    <div class="raw-chart-scroll" tabindex="0" aria-label="原始曲线，可横向滚动">
+      <svg id="raw-chart" class="raw-chart" width="1000" height="420" role="img" aria-label="可缩放的多通道序列与检测区间"></svg>
+      <div class="event-track-scroll"><svg id="chart-event-tracks" role="img" aria-label="逐通道真实事件标签条"></svg></div>
+    </div>
+    <div class="chart-readout"><span id="chart-hover-hint">悬停查看原始采样或聚合桶详情；移开后隐藏。拖动画布平移，滚轮以鼠标位置连续缩放。</span><output id="chart-tooltip" hidden aria-live="polite"></output></div>
+    <div class="overview-heading"><strong>全历史时间轴</strong><span id="chart-overview-caption" class="muted">点击任意位置跨年定位，拖动选框平移，拖动两端调整跨度。</span></div><svg id="chart-overview" height="85" role="img" aria-label="全数据集时间范围与当前视窗" tabindex="0"></svg>
+    <p id="chart-view-summary" class="muted"></p>
+    <p class="muted">显示聚合、平滑、通道选择和缩放均不参与评分。预测阴影取预测区间与有效曲线时间的交集；重叠只填一次，不跨采样空档。点检测的最小视觉宽度不改变零时长语义。类别通道保留状态序列，不做数值平滑。</p>
+    <details><summary>标签含义与未覆盖序列</summary><p class="muted">未覆盖事件标签仅表示当前通道没有有效标签匹配，不等于已确认正常；可能包含普通运行背景或未标注行为。Rare Event 是类别表标注的罕见正常事件，不按数值出现频率猜测。Invalid Segment 不是正常事件；演示中的 Invalid 为同类写法。</p><table><thead><tr><th>真实数据类别</th><th>含义</th></tr></thead><tbody><tr><td>Anomaly</td><td>已标注异常，不必然等于已确认物理故障</td></tr><tr><td>Rare Event</td><td>罕见但正常的特殊运行事件</td></tr><tr><td>Communication Gap</td><td>通信或接收中断相关区间</td></tr><tr><td>Invalid Segment</td><td>无效片段，不能直接当作正常观测</td></tr></tbody></table></details>
+  </section>
+  {% endif %}
   {% if report %}
   <section id="validation-report" class="panel"><div class="section-heading"><h2><span>03</span> {{ 'CSV 预览与校验' if mode == 'csv' else '输入校验' }}</h2><span class="badge {{ 'bad' if report.errors else 'good' }}">{{ '存在错误 · 已阻止评分' if report.errors else '校验通过' }}</span></div>
     {% if report.filename %}<p>文件：<strong>{{ report.filename }}</strong></p>{% endif %}
@@ -70,15 +98,12 @@
     <div class="metric-grid"><div class="metric featured"><span>Corrected event-wise F<sub>0.5</sub></span><b>{{ result.metrics.f0_5|score }}</b><small>β = 0.5 · ESA corrected</small><small>设 P 为修正精确率、R 为召回率：F0.5 = 1.25 × P × R /（0.25 × P + R）。</small></div><div class="metric"><span>修正精确率</span><b>{{ result.metrics.p_corrected|score }}</b><small>P_event × TNR</small><small>事件精确率 = 检出事件数 /（检出事件数 + 误报区间数）；再乘以正常时间中未被报警覆盖的比例。</small></div><div class="metric"><span>召回率</span><b>{{ result.metrics.recall|score }}</b><small>检出 / 可评测事件</small><small>召回率 = 检出事件数 / 可评测真实事件总数；例如 10 个事件检出 8 个，召回率为 0.8。</small></div></div>
     <div class="summary-grid"><div><b>{{ result.metrics.event_count }}</b><span>真实事件</span></div><div><b>{{ result.metrics.detected_count }}</b><span>检出事件</span></div><div><b>{{ result.metrics.missed_count }}</b><span>漏检事件</span></div><div><b>{{ result.metrics.false_positive_count }}</b><span>误报区间 · 官方语义</span></div></div>
     <details><summary>查看 P_event、TNR 和完整评测配置</summary><p>P_event = {{ result.metrics.p_event|score }} · TNR = {{ result.metrics.tnr|score }}</p><p class="muted">P_event 为事件精确率：检出事件数 /（检出事件数 + 误报区间数）。TNR 为正常时间中未被报警覆盖的比例；全时段报警会使 TNR 为 0，即使召回率为 1，最终得分也会为 0（指标可定义时）。</p><p>正常时长 {{ result.metrics.nominal_seconds }} 秒 · 正常时间误报覆盖 {{ result.metrics.false_positive_seconds }} 秒</p><pre>{{ result.config|tojson(indent=2) }}</pre></details>
-    <div class="section-heading timeline-heading"><h3>时间条对比</h3><label>仅图表筛选 <select id="chart-channel"><option value="">全部目标通道</option>{% for c in result.config.target_channels %}<option>{{ c }}</option>{% endfor %}</select></label></div>
-    <div class="legend"><span class="truth-dot">真实目标事件</span><span class="excluded-dot">未选类别</span><span class="prediction-dot">算法预测</span><span>◆ 点事件 · 悬停查看详情</span></div>
-    <svg class="timeline" viewBox="0 0 1000 135" role="img" aria-label="真实标签与预测时间条"><text x="5" y="51">标签</text><text x="5" y="101">预测</text><path d="M60 60H960 M60 110H960" class="axis"/>{% for bar in timeline %}{% if bar.point %}<circle data-channel="{{ bar.channel }}" class="bar {{ bar.kind }}" cx="{{ bar.x }}" cy="{{ bar.y + 8 }}" r="5"><title>{{ bar.title }}</title></circle>{% else %}<rect data-channel="{{ bar.channel }}" class="bar {{ bar.kind }}" x="{{ bar.x }}" y="{{ bar.y }}" width="{{ bar.width }}" height="16" rx="3"><title>{{ bar.title }}</title></rect>{% endif %}{% endfor %}</svg>
-    <p class="muted">图表通道筛选仅改变显示；主分数始终在上述全部目标通道上合并计算。多年窗口内的短事件可通过事件表查看精确时间。</p>
     <h3>真实事件检出 / 漏检</h3><div class="table-wrap"><table><thead><tr><th>事件 ID</th><th>类别</th><th>涉及通道</th><th>状态</th><th>区间集合 · UTC</th></tr></thead><tbody>{% for e in result.events %}<tr><td>{{ e.id }}</td><td>{{ e.category }}</td><td>{{ e.channels|join(', ') }}</td><td><span class="status {{ 'detected' if e.detected else 'missed' }}">{{ '检出' if e.detected else '漏检' }}</span></td><td>{% for i in e.intervals %}<div>{{ i.start }} → {{ i.end }}{{ ' · 点' if i.point }}</div>{% endfor %}</td></tr>{% else %}<tr><td colspan="5">当前范围与类别下没有可评测事件。</td></tr>{% endfor %}</tbody></table></div>
     <details><summary>合并后的预测区间详情（{{ result.predictions|length }} 个）</summary><div class="table-wrap"><table><thead><tr><th>开始</th><th>结束</th><th>端点</th><th>状态</th></tr></thead><tbody>{% for p in result.predictions %}<tr><td>{{ p.interval.start }}</td><td>{{ p.interval.end }}</td><td>{{ '[点]' if p.interval.point else ('闭区间' if p.interval.right_closed else '[start,end)') }}</td><td>{{ '命中目标事件' if p.matched_selected else ('误报' if p.false_positive else '与未选类别相交，不计事件误报') }}</td></tr>{% endfor %}</tbody></table></div></details>
     <div class="toolbar downloads"><form method="post" action="/download/json"><input type="hidden" name="token" value="{{ result_token }}"><button class="primary">下载结果 JSON</button></form><form method="post" action="/download/events"><input type="hidden" name="token" value="{{ result_token }}"><button class="secondary">下载事件明细 CSV</button></form></div>
   </section>{% endif %}
   <footer>ESA corrected event-wise · β = 0.5 · 参考 ESA-ADB 27ecde187aa6 · 独立评测，不合并不同 Mission 的标签。</footer>
 </main>
-<script type="application/json" id="page-data">{{ {'channels': dataset.channels if dataset else [], 'has_result': result is not none, 'version': cfg.version if cfg else ''}|tojson }}</script>
+<script type="application/json" id="page-data">{{ {'channels': dataset.channels if dataset else [], 'has_result': result is not none, 'version': cfg.version if cfg else '', 'chart': chart}|tojson }}</script>
+<script defer src="{{ url_for('static', filename='chart.js') }}"></script>
 </body></html>

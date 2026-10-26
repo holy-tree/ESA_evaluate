@@ -12,6 +12,7 @@
     if (report) report.hidden = true;
     if (result || report) document.querySelector('#stale-notice').hidden = false;
     if (clearUpload) document.querySelector('#upload-token').value = '';
+    window.dispatchEvent(new CustomEvent('esa:invalidate-chart'));
     dirty = true;
   }
   function addRow(row = {}) {
@@ -69,11 +70,5 @@
       rows.replaceChildren(); body.rows.forEach(addRow); invalidate();
       message.hidden = true;
     } catch (error) { message.textContent = error.message; message.hidden = false; }
-  });
-  const filter = document.querySelector('#chart-channel');
-  if (filter) filter.addEventListener('change', () => {
-    document.querySelectorAll('.bar[data-channel]').forEach(bar => {
-      bar.style.display = !filter.value || bar.dataset.channel === filter.value ? '' : 'none';
-    });
   });
 })();

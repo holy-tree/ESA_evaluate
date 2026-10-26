@@ -165,4 +165,7 @@ def load_dataset(cfg, start=None, end=None, confirmed=False, require_range=True)
     cfg["target_channels"] = channels
     cfg["label_warnings"] = label_warnings
     cfg["label_errors"] = label_errors
-    return dict(config=cfg, channels=channels, window=window, labels=labels)
+    # Keep the full Mission event catalogue for stable chart colors across
+    # channel/date/category filters. It is not a list of scoreable events.
+    return dict(config=cfg, channels=channels, window=window, labels=labels,
+                event_ids=sorted(categories_by_id))

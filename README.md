@@ -1,11 +1,11 @@
 # ESA 异常检测结果评测系统
 
-对 Mission1、Mission2、Mission3 的算法预测区间计算 **ESA corrected event-wise F0.5（β=0.5）**。支持手动输入、CSV 上传、结果展示和导出，不需要加载遥测曲线或训练模型。
+对 Mission1、Mission2、Mission3 的算法预测区间计算 **ESA corrected event-wise F0.5（β=0.5）**。支持手动输入、CSV 上传、原始曲线与检测区间展示、结果导出。评分只依赖标签；原始曲线按需读取通道文件，不训练模型。
 
 ## 环境依赖
 
 - Python 3.13+、uv。
-- Flask、pandas、portion、PyYAML；测试使用 pytest。依赖由 `pyproject.toml` 管理，通过 `uv sync` 安装。
+- Flask、pandas、NumPy、portion、PyYAML；测试使用 pytest。依赖由 `pyproject.toml` 管理，通过 `uv sync` 安装。
 
 ## 使用流程
 
@@ -46,6 +46,8 @@ dataset_root: 'D:/Projects/pycharm/ESA'
   ESA-Mission3/{labels.csv, anomaly_types.csv, channels.csv}
 ```
 
+真实曲线另需各 Mission 下的 `channels/channel_*.zip`（ESA 原始 pandas 序列）。缺少 ZIP 时仍可评分，图表会显示读取提示；不会用演示曲线替代真实数据。
+
 ### 3. 确认 Mission 配置
 
 编辑对应的 `configs/Mission1.json`、`Mission2.json` 或 `Mission3.json`：
@@ -62,7 +64,7 @@ dataset_root: 'D:/Projects/pycharm/ESA'
 
 真实配置已填入本地目标通道的实际采样时间边界（Mission1：2000–2013 年；Mission2：2000–2003 年上半年；Mission3：2000–2008 年初），精确值及来源保存在配置的 `start`、`end` 和 `observation_range_source` 中。取全体目标通道最早到最晚时刻的外包范围，并非所有通道共同覆盖的交集，也不表示其间没有缺测；未标注的缺测不额外推断排除。更换数据版本或目标通道时需重新确认窗口。
 
-一次性重新检查时间边界可执行 `uv run python scripts/scan_observation_ranges.py --mission Mission1`（也支持 Mission2、Mission3）。该离线命令逐个读取目标通道 ZIP 并输出各通道时间范围，不自动修改配置；网页评分不读取 ZIP。异常标签边界不用于推断观测范围。
+一次性重新检查时间边界可执行 `uv run python scripts/scan_observation_ranges.py --mission Mission1`（也支持 Mission2、Mission3）。该离线命令逐个读取目标通道 ZIP 并输出各通道时间范围，不自动修改配置；评分本身不读取 ZIP。异常标签边界不用于推断观测范围。
 
 真实标签必需 `ID,Channel,StartTime,EndTime`。类别优先读取标签的 `Category`；缺少时通过 `anomaly_types.csv` 的 `ID,Category` 关联，不猜测类别。`Target` 支持 YES/NO、true/false、1/0；无法识别时需配置 `target_channels`。
 
@@ -80,9 +82,20 @@ uv run app.py
 2. 真实配置未设置 `start`、`end` 时，填写完整观测窗口并勾选确认。窗口不会从预测或标签边界推断。
 3. 选择一种输入模式：手动添加区间，或上传预测 CSV。演示来源可点击“加载当前 Mission 演示预测”，也可下载对应演示 CSV。
 4. CSV 模式先点击“上传并预览 / 校验”，修正所有错误后点击“开始评测”；手动模式直接评测。
-5. 查看整体分数、事件明细和时间条，下载结果 JSON 或事件明细 CSV。
+5. 查看整体分数与事件明细，在原始曲线上查看检测区间，下载结果 JSON 或事件明细 CSV。
 
 修改 Mission、版本、类别、来源或时间窗口后必须重新校验和评分。图表通道筛选只改变显示。
+
+### 原始曲线可视化
+
+- **连续缩放与全历史：**图内滚轮以鼠标时间为中心连续放大／缩小，Shift+滚轮或拖动画布平移；年／月／周／日／时仅为快捷视野。底部全历史时间轴可点击跨年定位、拖动选框及两端缩放，无需逐年翻页。主图保留横向滚动以兼容窄屏。
+- **浏览范围独立于评分：**全历史范围来自当前 Mission 已确认的 `start/end`，缺少时仅能使用已确认窗口，不从标签推断。可以浏览本次评分范围之外的数据，灰底标明“本次评分范围外”；分数不会改变。修改评分输入后旧图表失效，重新提交后恢复。
+- **降噪显示：**默认远景按时间桶显示中位数趋势、P5–P95 波动带及可选最小／最大值包络，近景恢复原始折线；另可选原始显示、移动平均或高斯核平滑。平滑按实际时间与桶内记录数加权，仅作用于显示，窗口／带宽可填秒数，空值为视窗跨度的 1/50。悬停明确区分原始采样与聚合桶，不将趋势值称为原始值；聚合桶保留记录数、原始极值和分位数。稀少尖峰可能不在中位数／P5–P95 趋势中，需结合极值包络及放大检查。
+- **采样间隔与状态：**绘图根据当前窗口中反复出现的采样节奏估计连续性（常见正间隔的高分位数 ×10，阈值至少 1 秒），适应正常变频采样，稀少极长间隔和非有限值处断开；不将该规则作为异常或缺测判定。类别通道保持状态阶梯序列，忽略数值平滑，不把状态编码当作数值大小。
+- **多通道：**勾选并“应用通道”；曲线图例悬停／聚焦时浮起加粗、置顶，其余曲线淡化，点击可固定高亮，不移动数据坐标。多通道按通道配色，真实事件在下方标签条展示；单通道可继续按事件 ID 着色。可选参考标准化叠加、原始值叠加或分通道泳道；不同单位不宜直接比较。参考标准化使用每个完整通道至多 20000 个等位置采样的 median/IQR（IQR 为零时用标准差），仅用于绘图，不是模型训练或评分预处理。类别通道独立泳道。
+- **预测导航：**“下一预测 J／上一预测 K”导航已选通道的算法报警区间，重叠／相接报警仅为导航合并并保留来源通道，不改变评分。保留当前跨度并平移，区间放不下时扩大；“聚焦当前检查点”适配区间与上下文，“返回上一视图”恢复视窗。橙色描边为当前导航目标，不是真实事件；编辑输入时快捷键不触发。
+- **检测阴影：**`rgba(210,95,95,0.1)` 淡红带为预测区间与有效曲线时间的交集。多通道共享数值轴时对阴影取并集，只填一次；状态泳道分别显示。点／极短区间仅有最小视觉宽度，不改变真实持续时间或分数。
+- **缓存与来源：**首次选择真实通道读取 ZIP；多通道 LRU 按缓存数组体积限制为 512 MiB（可用 `ESA_CHART_CACHE_BYTES` 调整，并非进程总内存上限），键包含 Mission、版本、来源、通道及文件修改信息。显示点数按绘图区像素和已选通道分配；原始文件不变。演示曲线来自各 `demo_data/Mission*/telemetry.csv`，明确标为合成演示。
 
 ## 输入与输出
 
@@ -139,6 +152,8 @@ CSV 预览与下载凭据有效期为 1 小时，默认重启后失效；可设�
 uv run pytest -q
 uv run python scripts/crosscheck_official.py
 uv run python scripts/smoke_real.py
+uv run python scripts/smoke_charts.py
+uv run python scripts/smoke_chart_explorer.py
 ```
 
 官方交叉验证需要联网；真实自检预测由标签构造，仅验证管线，不代表模型性能。
