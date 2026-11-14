@@ -3,6 +3,7 @@ import json
 from pathlib import Path
 import re
 import sys
+from tempfile import TemporaryDirectory
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -12,8 +13,8 @@ from app import create_app
 from datasets import MISSIONS, iso, load_config, timestamp
 
 
-def main():
-    client = create_app({"TESTING": True}).test_client()
+def run_checks(directory):
+    client = create_app({"TESTING": True, "LEADERBOARD_DIR": directory}).test_client()
     results = []
     for mission in MISSIONS:
         cfg = load_config(mission, "real")
@@ -45,6 +46,11 @@ def main():
         assert response.get_json()["window_start"] == iso(later)
         results.append(dict(mission=mission, arbitrary_cross_year_window="PASS"))
     print(json.dumps(results, ensure_ascii=False, indent=2))
+
+
+def main():
+    with TemporaryDirectory(prefix="esa-explorer-smoke-leaderboard-") as directory:
+        run_checks(directory)
 
 
 if __name__ == "__main__":

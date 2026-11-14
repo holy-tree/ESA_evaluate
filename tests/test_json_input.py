@@ -172,11 +172,11 @@ def test_format_switch_cannot_reuse_preview(client, original, new):
     assert 'id="evaluation-result"' not in response.get_data(as_text=True)
 
 
-def test_json_mission_switch_revalidates_and_limits_apply_on_web(client):
+def test_json_mission_switch_revalidates_and_limits_apply_on_web(client, tmp_path):
     preview = post_json(client,action="preview")
     response = client.post("/",data=dict(fields("Mission2","json"),upload_token=upload_token(preview)))
     assert "旧预览失效" in response.get_data(as_text=True)
-    small = create_app(dict(TESTING=True,MAX_CSV_BYTES=20)).test_client()
+    small = create_app(dict(TESTING=True,MAX_CSV_BYTES=20,LEADERBOARD_DIR=tmp_path / "submissions")).test_client()
     assert "JSON 文件超过大小上限" in post_json(small).get_data(as_text=True)
-    limited = create_app(dict(TESTING=True,MAX_RECORDS=1)).test_client()
+    limited = create_app(dict(TESTING=True,MAX_RECORDS=1,LEADERBOARD_DIR=tmp_path / "submissions")).test_client()
     assert "记录数量超过上限" in post_json(limited).get_data(as_text=True)

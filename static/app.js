@@ -4,6 +4,7 @@
   const form = document.querySelector('#evaluation-form');
   const rows = document.querySelector('#prediction-rows');
   const message = document.querySelector('#client-message');
+  const identity = document.querySelector('#user-id');
   let dirty = false;
   function invalidate(clearUpload = false) {
     const result = document.querySelector('#evaluation-result');
@@ -50,13 +51,26 @@
       const params = new URLSearchParams();
       ['mission', 'source', 'category'].forEach(name => params.set(name, document.querySelector(`#${name}`).value));
       params.set('mode', form.querySelector('[name=mode]:checked').value);
+      if (identity.value.trim()) params.set('user_id', identity.value.trim());
       window.location.assign('/?' + params.toString());
     });
     select.dataset.previous = select.value;
   });
   document.querySelectorAll('.score-config').forEach(input => input.addEventListener('input', () => invalidate(true)));
-  document.querySelector('#prediction-csv').addEventListener('change', () => invalidate(true));
-  document.querySelector('#prediction-json').addEventListener('change', () => invalidate(true));
+  function identityHint() {
+    const value = form.querySelector('[name=mode]:checked')?.value || 'csv';
+    identity.required = value === 'manual';
+    let text;
+    if (identity.value.trim()) text = `本次使用填写的 ID：${identity.value.trim()}`;
+    else if (value === 'manual') text = '手动提交需要填写用户 ID。';
+    else {
+      const filename = document.querySelector(`#prediction-${value}`).files[0]?.name || (document.querySelector('#upload-token').value ? data.upload_filename : '');
+      text = filename ? `本文件默认 ID：${filename}（含扩展名）` : '选择文件后，文件名可自动作为本次 ID。';
+    }
+    document.querySelector('#identity-hint').textContent = text;
+  }
+  ['csv','json'].forEach(value => document.querySelector(`#prediction-${value}`).addEventListener('change', () => { invalidate(true); identityHint(); }));
+  identity.addEventListener('input', () => { identityHint(); invalidate(); document.querySelectorAll('.best-row-current').forEach(row => row.classList.remove('best-row-current')); });
   function showMode(value) {
     document.querySelector('#manual-input').hidden = value !== 'manual';
     document.querySelector('#csv-input').hidden = value === 'manual';
@@ -65,14 +79,18 @@
       input.hidden = value !== format; input.disabled = value !== format;
     });
     document.querySelectorAll('[data-upload-format]').forEach(node => { node.hidden = node.dataset.uploadFormat !== value; });
+    identityHint();
   }
   document.querySelectorAll('[name=mode]').forEach(radio => radio.addEventListener('change', () => {
     showMode(radio.value);
     document.querySelector('#prediction-csv').value = '';
     document.querySelector('#prediction-json').value = '';
     invalidate(true);
+    identityHint();
   }));
-  showMode(form.querySelector('[name=mode]:checked')?.value || 'manual');
+  const initialMode = form.querySelector('[name=mode]:checked') || form.querySelector('[name=mode][value=csv]');
+  initialMode.checked = true;
+  showMode(initialMode.value);
   document.querySelector('#load-example').addEventListener('click', async () => {
     const params = new URLSearchParams({mission: document.querySelector('#mission').value,
       source: document.querySelector('#source').value, version: data.version});

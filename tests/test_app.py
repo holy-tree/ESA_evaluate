@@ -11,7 +11,7 @@ from datasets import BASE, MISSIONS, DataError, iso, load_config, load_dataset, 
 
 
 def fields(mission="Mission1", mode="csv"):
-    return dict(mission=mission, source="demo", version="demo-1.0", category="both", mode=mode, action="evaluate")
+    return dict(mission=mission, source="demo", version="demo-1.0", category="both", mode=mode, action="evaluate", user_id="test-user")
 
 
 def extract_token(response, action):
@@ -143,7 +143,7 @@ def test_invalid_blocks_entire_score_and_errors_download(client):
 
 def test_no_manual_csv_mixing_and_empty_manual(client):
     response = post_csv(client, channel="BAD", starttime="broken", endtime="broken")
-    assert exported(client, response)["metrics"]["detected_count"] == 1
+    assert exported(client, response)["metrics"] == exported(client, post_csv(client))["metrics"]
     response = client.post("/", data=dict(fields(mode="manual"), prediction_csv=(io.BytesIO(b"bad"), "bad.csv")))
     assert exported(client, response)["metrics"]["f0_5"] == 0
 
@@ -169,7 +169,7 @@ def test_invalid_version_mission_source(client):
 def test_real_unconfigured_does_not_fallback(tmp_path):
     settings = tmp_path / "settings.yaml"
     settings.write_text(f"dataset_root: '{tmp_path.as_posix()}'\n", encoding="utf-8")
-    client = create_app(dict(TESTING=True, SETTINGS_FILE=settings)).test_client()
+    client = create_app(dict(TESTING=True, SETTINGS_FILE=settings, LEADERBOARD_DIR=tmp_path / "submissions")).test_client()
     text = client.get("/?mission=Mission3&source=real").get_data(as_text=True)
     assert "真实数据未配置" in text
     assert 'id="evaluation-result"' not in text
@@ -178,7 +178,7 @@ def test_real_unconfigured_does_not_fallback(tmp_path):
 def test_yaml_error_displayed_and_demo_remains_available(tmp_path):
     settings = tmp_path / "settings.yaml"
     settings.write_text("dataset_root: null\n", encoding="utf-8")
-    client = create_app(dict(TESTING=True, SETTINGS_FILE=settings)).test_client()
+    client = create_app(dict(TESTING=True, SETTINGS_FILE=settings, LEADERBOARD_DIR=tmp_path / "submissions")).test_client()
     text = client.get("/?mission=Mission1&source=real").get_data(as_text=True)
     assert "dataset_root 必须为非空路径字符串" in text
     demo = client.get("/?mission=Mission1&source=demo")
@@ -198,7 +198,7 @@ def test_yaml_root_drives_real_upload_and_root_change_invalidates_preview(tmp_pa
         (folder / "anomaly_types.csv").write_text("ID,Category\nfrom_yaml,Anomaly\n", encoding="utf-8")
     settings = tmp_path / "settings.yaml"
     settings.write_text(f"dataset_root: '{(tmp_path / 'first').as_posix()}'\n", encoding="utf-8")
-    client = create_app(dict(TESTING=True, SETTINGS_FILE=settings)).test_client()
+    client = create_app(dict(TESTING=True, SETTINGS_FILE=settings, LEADERBOARD_DIR=tmp_path / "submissions")).test_client()
     data = dict(fields(mission), source="real", version="local-unversioned",
                 range_start="2024-01-01T00:00:00Z", range_end="2024-01-01T00:01:40Z", confirm_range="yes")
     content = b"channel,starttime,endtime\nconfigured_channel,2024-01-01T00:00:12Z,2024-01-01T00:00:18Z\n"
@@ -214,14 +214,14 @@ def test_yaml_root_drives_real_upload_and_root_change_invalidates_preview(tmp_pa
     assert 'id="evaluation-result"' not in response.get_data(as_text=True)
 
 
-def test_upload_and_record_limits_web():
-    client = create_app(dict(TESTING=True, MAX_CSV_BYTES=100, MAX_RECORDS=1)).test_client()
+def test_upload_and_record_limits_web(tmp_path):
+    client = create_app(dict(TESTING=True, MAX_CSV_BYTES=100, MAX_RECORDS=1, LEADERBOARD_DIR=tmp_path / "submissions")).test_client()
     response = post_csv(client, content=b"x" * 101)
     assert "大小上限" in response.get_data(as_text=True)
-    client = create_app(dict(TESTING=True, MAX_CSV_BYTES=1000, MAX_RECORDS=1)).test_client()
+    client = create_app(dict(TESTING=True, MAX_CSV_BYTES=1000, MAX_RECORDS=1, LEADERBOARD_DIR=tmp_path / "submissions")).test_client()
     response = post_csv(client)
     assert "记录数量超过上限" in response.get_data(as_text=True)
-    client = create_app(dict(TESTING=True, MAX_CONTENT_LENGTH=100)).test_client()
+    client = create_app(dict(TESTING=True, MAX_CONTENT_LENGTH=100, LEADERBOARD_DIR=tmp_path / "submissions")).test_client()
     assert post_csv(client).status_code == 413
 
 

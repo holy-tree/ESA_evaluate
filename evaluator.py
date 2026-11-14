@@ -11,6 +11,7 @@ import portion as P
 from datasets import CATEGORIES, DataError, iso
 
 REFERENCE = "kplabs-pl/ESA-ADB@27ecde187aa631512cf38a4508474b01ebeb1eda"
+PROTOCOL = "channel-macro-corrected-eventwise-f0.5/v1"
 
 
 def union(intervals):
@@ -156,7 +157,7 @@ def evaluate(dataset, predictions, category_mode="both"):
     config = {k: v for k,v in dataset["config"].items() if k != "paths"}
     config.update(target_channels=channels, category_mode=category_mode, selected_categories=CATEGORIES[category_mode],
         beta=0.5, timezone="UTC", reference=REFERENCE,
-        evaluation_protocol="channel-macro-corrected-eventwise-f0.5/v1",
+        evaluation_protocol=PROTOCOL,
         aggregation="channel_macro_mean", scope="same-channel event detection, then arithmetic mean across channels",
         prediction_endpoints="[start,end); point closed; full_range end closed", ground_truth_endpoints="closed")
     return dict(status="ok" if metrics["f0_5"] is not None else "not_applicable",

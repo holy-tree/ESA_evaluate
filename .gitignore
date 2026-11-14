@@ -41,6 +41,9 @@ dist/
 /uploads/
 /results/
 /exports/
+/submission_data/leaderboard.json
+/submission_data/.leaderboard.lock
+/submission_data/.leaderboard-*.tmp
 *.log
 
 # Real ESA datasets if copied into the project root

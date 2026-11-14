@@ -6,6 +6,7 @@ import io
 import json
 import os
 import secrets
+from datetime import datetime, timezone
 from pathlib import Path
 
 from flask import Flask, Response, render_template, request, send_file
@@ -18,6 +19,7 @@ from evaluator import evaluate
 from chart_data import build_view, navigation_range
 from telemetry import TelemetryStore
 from validation import parse_csv, parse_json, validate_records
+from leaderboard import IdentityError, LeaderboardError, LeaderboardStore, ranking_scope, resolve_identity, upload_basename
 
 
 def create_app(test_config=None):
@@ -30,6 +32,7 @@ def create_app(test_config=None):
         TOKEN_MAX_AGE=3600,
         CHART_MAX_POINTS=8000,
         CHART_CACHE_BYTES=int(os.environ.get("ESA_CHART_CACHE_BYTES", 512 * 1024 * 1024)),
+        LEADERBOARD_DIR=BASE / "submission_data",
     )
     if test_config:
         app.config.update(test_config)
@@ -42,6 +45,7 @@ def create_app(test_config=None):
     app.config["MAX_FORM_MEMORY_SIZE"] = app.config["MAX_CONTENT_LENGTH"]
     signer = URLSafeTimedSerializer(app.config["SECRET_KEY"], salt="esa-evaluation-v1")
     telemetry = TelemetryStore(app.config["CHART_CACHE_BYTES"])
+    rankings = LeaderboardStore(app.config["LEADERBOARD_DIR"])
 
     def config_for(mission, source, version=None):
         return load_config(mission, source, version, app.config["CONFIG_DIR"], app.config["SETTINGS_FILE"])
@@ -71,10 +75,11 @@ def create_app(test_config=None):
     def index():
         values = request.form if request.method == "POST" else request.args
         mission, source = values.get("mission", "Mission1"), values.get("source", "real")
-        category, mode = values.get("category", "both"), values.get("mode", "manual")
+        category, mode = values.get("category", "both"), values.get("mode", "csv")
         view = dict(missions=MISSIONS, mission=mission, source=source, category=category, mode=mode,
                     cfg=None, dataset=None, error=None, report=None, result=None, result_token=None,
                     upload_token="", errors_token=None, rows=[], chart=None,
+                    user_id=values.get("user_id", ""), identity_error=None, board=None, leaderboard_error=None,
                     range_start=values.get("range_start", ""), range_end=values.get("range_end", ""),
                     range_confirmed=values.get("confirm_range") == "yes",
                     max_bytes=app.config["MAX_CSV_BYTES"], max_records=app.config["MAX_RECORDS"])
@@ -107,13 +112,13 @@ def create_app(test_config=None):
             view.update(dataset=dataset, cfg=dataset["config"])
             if request.method == "GET":
                 view["rows"] = [dict(channel=dataset["channels"][0], starttime="", endtime="")]
-            else:
+            elif values.get("action") != "leaderboard":
                 context = fingerprint(dataset, category)
                 if mode in ("csv", "json"):
                     upload = request.files.get(f"prediction_{mode}")
                     if upload and upload.filename:
                         content = upload.read(app.config["MAX_CSV_BYTES"] + 1)
-                        filename = secure_filename(upload.filename) or f"predictions.{mode}"
+                        filename = upload_basename(upload.filename) or f"predictions.{mode}"
                     elif values.get("upload_token"):
                         saved = unseal(values["upload_token"], "upload")
                         if saved["context"] != context:
@@ -135,12 +140,23 @@ def create_app(test_config=None):
                 if report["errors"]:
                     view["errors_token"] = seal("errors", report["errors"])
                 elif values.get("action", "evaluate") == "evaluate":
+                    user_id, id_source = resolve_identity(view["user_id"], mode, report["filename"])
                     result = evaluate(dataset, report["records"], category)
                     result["input_summary"] = {k: v for k, v in report.items() if k not in ("records", "preview")}
                     result["input_mode"] = mode
                     result["data_fingerprint"] = context
                     result["navigation_range"] = navigation_range(cfg, dataset["window"])
+                    submitted_at = datetime.now(timezone.utc).isoformat(timespec="microseconds").replace("+00:00", "Z")
+                    submission = dict(user_id=user_id, id_source=id_source, filename=report["filename"], input_mode=mode,
+                                      submitted_at=submitted_at, persisted=False, eligible=result["metrics"]["f0_5"] is not None)
+                    try:
+                        submission = rankings.record(result, user_id, id_source, report["filename"], mode, submitted_at)
+                    except (LeaderboardError, OSError) as exc:
+                        view["leaderboard_error"] = f"本次分数已计算，但排行榜保存失败：{exc}"
+                    result["submission"] = submission
                     view.update(result=result, result_token=seal("result", result))
+        except IdentityError as exc:
+            view["identity_error"] = str(exc)
         except (DataError, OSError) as exc:
             prefix = "真实数据未配置或配置不完整：" if source == "real" else "配置或输入错误："
             view["error"] = prefix + str(exc)
@@ -156,7 +172,25 @@ def create_app(test_config=None):
                                  navigation_start=bounds[0], navigation_end=bounds[1],
                                  channel=first["channel"] if first else ds["channels"][0],
                                  date=(first["start"] if first else cfg["start"])[:10])
+            try:
+                scope = ranking_scope(cfg, ds["channels"], category, fingerprint(ds, category))
+                view["board"] = rankings.board(scope)
+            except (LeaderboardError, OSError) as exc:
+                view["leaderboard_error"] = view["leaderboard_error"] or f"排行榜读取失败：{exc}"
         return render_template("index.html", **view)
+
+    @app.get("/leaderboard")
+    def leaderboard_page():
+        try:
+            catalogue = rankings.catalogue()
+            key = request.args.get("scope")
+            scope = next((r for r in catalogue if r["key"] == key), None) if key else (catalogue[0] if catalogue else None)
+            if key and scope is None:
+                return render_template("leaderboard.html", catalogue=catalogue, board=None, error="该榜单不存在，请选择其他评测配置。"), 404
+            board = rankings.board(scope) if scope else None
+            return render_template("leaderboard.html", catalogue=catalogue, board=board, error=None)
+        except (LeaderboardError, OSError) as exc:
+            return render_template("leaderboard.html", catalogue=[], board=None, error=f"排行榜读取失败：{exc}"), 503
 
     @app.post("/api/series")
     def raw_series():
@@ -230,6 +264,22 @@ def create_app(test_config=None):
         _, rows = read_csv(BASE / "demo_data" / mission / f"{kind}.csv")
         return Response(json.dumps(rows, ensure_ascii=False, indent=2), mimetype="application/json",
                         headers={"Content-Disposition": f'attachment; filename="DEMO-{mission}-{kind}.json"'})
+
+    @app.get("/samples/<mission>/predictions.<format>")
+    def real_sample(mission, format):
+        if mission not in MISSIONS or format not in ("csv", "json"):
+            return "样例文件不存在", 404
+        path = BASE / "sample_predictions" / f"PIPELINE-CHECK-{mission}.csv"
+        if format == "csv":
+            return send_file(path, as_attachment=True, download_name=path.name, mimetype="text/csv")
+        _, rows = read_csv(path)
+        return Response(json.dumps(rows, ensure_ascii=False, indent=2), mimetype="application/json",
+            headers={"Content-Disposition": f'attachment; filename="PIPELINE-CHECK-{mission}.json"'})
+
+    @app.get("/samples/guide")
+    def real_sample_guide():
+        return send_file(BASE / "sample_predictions" / "README.md", as_attachment=True,
+                         download_name="ESA-prediction-samples-README.md", mimetype="text/markdown")
 
     @app.post("/download/<kind>")
     def download(kind):

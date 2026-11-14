@@ -5,8 +5,8 @@ from datasets import load_config, load_dataset, timestamp
 
 
 @pytest.fixture
-def client():
-    return create_app({"TESTING": True, "SECRET_KEY": "test-key"}).test_client()
+def client(tmp_path):
+    return create_app({"TESTING": True, "SECRET_KEY": "test-key", "LEADERBOARD_DIR": tmp_path / "submissions"}).test_client()
 
 
 @pytest.fixture

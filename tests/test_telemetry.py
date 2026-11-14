@@ -43,11 +43,11 @@ def test_three_mission_raw_curves_and_scored_channel_specific_shading(client, mi
     scored = post_csv(client, mission)
     date = cfg["start"][:10]
     if mission == "Mission1":
-        channel, expected = "channel_2", [(12, 18)]
+        channel, expected = "channel_2", [(11, 12), (15, 17), (41, 43), (46, 48), (70, 72)]
     elif mission == "Mission2":
-        channel, expected = "channel_1", [(12, 18)]
+        channel, expected = "channel_1", [(11, 12), (13, 14), (15, 16), (17, 18), (70, 72)]
     else:
-        channel, expected = "channel_4", [(30, 30), (82, 88)]
+        channel, expected = "channel_4", [(30, 30), (41, 42), (43, 44), (45, 46), (47, 48), (92, 94)]
     chart = request_series(client, scored, channel, date, scored=True).get_json()
     assert chart["has_scored_predictions"]
     assert [(d["start"], d["end"]) for d in chart["detections"]] == expected
@@ -168,7 +168,7 @@ def test_stale_chart_context_and_unknown_channel_rejected(tmp_path):
     source = json.loads((BASE / "configs" / "Mission1.json").read_text(encoding="utf-8"))
     file = config_dir / "Mission1.json"
     file.write_text(json.dumps(source), encoding="utf-8")
-    client = create_app(dict(TESTING=True, CONFIG_DIR=config_dir)).test_client()
+    client = create_app(dict(TESTING=True, CONFIG_DIR=config_dir, LEADERBOARD_DIR=tmp_path / "submissions")).test_client()
     page = client.get("/?mission=Mission1&source=demo")
     rejected = request_series(client, page, "channel_3", "2024-01-01")
     assert rejected.status_code == 400 and "目标通道" in rejected.get_json()["error"]

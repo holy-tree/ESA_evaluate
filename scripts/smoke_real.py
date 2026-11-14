@@ -7,6 +7,7 @@ import re
 from statistics import fmean
 import sys
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -14,8 +15,8 @@ from app import create_app
 from datasets import MISSIONS, DataError, iso, load_config, load_dataset
 
 
-def main():
-    client = create_app({"TESTING": True}).test_client()
+def run_checks(directory):
+    client = create_app({"TESTING": True, "LEADERBOARD_DIR": directory}).test_client()
     summaries = []
     for mission in MISSIONS:
         try:
@@ -53,6 +54,11 @@ def main():
     print(json.dumps(summaries, ensure_ascii=False, indent=2))
     if any(s["status"] != "PASS" for s in summaries):
         sys.exit(1)
+
+
+def main():
+    with TemporaryDirectory(prefix="esa-smoke-leaderboard-") as directory:
+        run_checks(directory)
 
 
 if __name__ == "__main__":

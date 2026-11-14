@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 import re
 import sys
+from tempfile import TemporaryDirectory
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -11,8 +12,8 @@ from app import create_app
 from datasets import MISSIONS, iso, load_config, load_dataset
 
 
-def main():
-    client = create_app({"TESTING": True}).test_client()
+def run_checks(directory):
+    client = create_app({"TESTING": True, "LEADERBOARD_DIR": directory}).test_client()
     results = []
     for mission in MISSIONS:
         cfg = load_config(mission, "real")
@@ -35,7 +36,7 @@ def main():
             ds = load_dataset(cfg)
         label = next(row for row in ds["labels"] if row["category"] == "Anomaly")
         fields = dict(mission=mission, source="real", version=cfg["version"], category="both", mode="manual", action="evaluate",
-            channel=label["channel"], starttime=iso(label["start"]), endtime=iso(label["end"]))
+            channel=label["channel"], starttime=iso(label["start"]), endtime=iso(label["end"]), user_id="PIPELINE-SELF-CHECK")
         if mission == "Mission3":
             fields.update(range_start=ds["config"]["start"], range_end=ds["config"]["end"], confirm_range="yes")
         scored = client.post("/", data=fields)
@@ -47,6 +48,11 @@ def main():
         results.append(dict(mission=mission, channel=chart["channel"], scale="day-with-detection", kind=chart["kind"],
             purpose="labels-derived pipeline self-check, not model performance", status="PASS"))
     print(json.dumps(results, ensure_ascii=False, indent=2))
+
+
+def main():
+    with TemporaryDirectory(prefix="esa-chart-smoke-leaderboard-") as directory:
+        run_checks(directory)
 
 
 if __name__ == "__main__":

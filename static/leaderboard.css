@@ -1,0 +1,20 @@
+.brand-link{margin-left:auto;color:var(--accent);text-decoration:none;font-size:13px;white-space:nowrap}
+.brand-mark{text-decoration:none}
+.submission-identity{padding:15px 17px;margin-bottom:20px;border:1px solid var(--line);border-radius:8px;background:#f8fafd}
+.submission-identity>input{max-width:560px;margin-top:7px}
+.submission-identity p{margin:7px 0 0}
+.submission-identity .alert{margin-top:12px}
+.submission-receipt{display:flex;flex-wrap:wrap;gap:7px 20px;padding:12px 15px;margin:12px 0 20px;background:#f1f6fd;border:1px solid #dbe7f8;border-radius:8px;font-size:12px;overflow-wrap:anywhere}
+.submission-receipt strong{color:#234974}
+.submission-note{color:#b43c49}
+.leaderboard-scope{font-size:12px;color:#4c6079;overflow-wrap:anywhere}
+#leaderboard-table{min-width:800px}
+#leaderboard-table th{white-space:nowrap}
+#leaderboard-table td:first-child{font-weight:700;color:#35638f}
+.best-row-current{background:#eef7ff}
+.leaderboard-page{padding-top:28px;padding-bottom:30px}
+.board-selector{display:flex;flex-wrap:wrap;align-items:center;gap:12px;margin:20px 0}
+.board-selector label{flex-basis:100%}
+.board-selector select{flex:1 1 300px;min-width:0}
+.tabs[aria-label="输入模式"]{flex-wrap:wrap;row-gap:10px}
+@media(max-width:760px){.submission-identity{padding:12px}.brand>.badge{display:none}}
