@@ -53,11 +53,11 @@ def test_complete_manual_csv_preview_exports(client, mission):
     assert channel_csv.status_code == 200
     channel_rows = list(csv.DictReader(io.StringIO(channel_csv.get_data(as_text=True).lstrip("\ufeff"))))
     assert [row["channel"] for row in channel_rows] == ds["channels"]
-    assert exported(client, manual)["channel_results"] == csv_json["channel_results"] if False else True
     _, rows = read_csv(BASE / "demo_data" / mission / "predictions.csv")
     manual = client.post("/", data=dict(fields(mission, "manual"),
         channel=[r["channel"] for r in rows], starttime=[r["starttime"] for r in rows], endtime=[r["endtime"] for r in rows]))
     assert exported(client, manual)["metrics"] == csv_json["metrics"]
+    assert exported(client, manual)["channel_results"] == csv_json["channel_results"]
     events = client.post("/download/events", data={"token": extract_token(csv_result, "events")})
     assert events.status_code == 200
     assert mission in events.get_data(as_text=True)

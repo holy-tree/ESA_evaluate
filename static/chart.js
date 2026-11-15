@@ -1,7 +1,12 @@
 /* Display-only time navigation. Input times stay UTC; scores are immutable snapshots. */
 (() => {
+  let instance=null;
+  function init() {
+  if(instance){instance.show();return;}
   const page = JSON.parse(document.querySelector('#page-data').textContent);
   if (!page.chart) return;
+  const lifecycle=new AbortController();
+  const isActive=()=>!document.getElementById('module-curves')?.hidden;
   const $ = id => document.getElementById(id);
   const svg = $('raw-chart'), overview = $('chart-overview'), tracks = $('chart-event-tracks');
   const scroll = document.querySelector('.raw-chart-scroll');
@@ -18,6 +23,7 @@
   let hoveredEvent = null, focusedEvent = null, eventPaintOrder = [];
   let waveNodes = new Map(), eventNodes = new Map(), eventMap = new Map(), drag = null, overviewDrag = null;
   let wheelActive = false, wheelEnd = null;
+  let loading=false,lastWidth=0;
   const categoryNames = {'Anomaly': '异常', 'Rare Event': '罕见正常事件', 'Communication Gap': '通信中断', 'Invalid Segment': '无效片段', 'Invalid': '无效片段'};
 
   function node(tag, attrs = {}, text = null) {
@@ -68,13 +74,13 @@
     if (options.request !== false) schedule(options.delay ?? 150);
   }
   function schedule(delay = 150) {
-    if (stale) return;
+    if (stale || !isActive()) return;
     clearTimeout(timer); if (controller) controller.abort(); ++serial;
     status.textContent = '视窗已更新，正在加载对应数据… 显示处理不参与评分。';
     timer = setTimeout(load, delay);
   }
   function renderSoon() {
-    if (stale) return;
+    if (stale || !isActive()) return;
     if (frame) return;
     frame = requestAnimationFrame(() => { frame = null; draw(); });
   }
@@ -269,7 +275,7 @@
     });
   }
   function draw() {
-    if(stale)return;
+    if(stale || !isActive())return;
     hideHover(); svg.replaceChildren(); waveNodes=new Map(); eventNodes=new Map();eventPaintOrder=[];
     const width=Math.max(900,scroll.clientWidth-2), left=125, right=width-32;
     const {lanes,height}=makeLanes();
@@ -325,7 +331,7 @@
         });
         waves.append(group);
       });
-      if(!lane.channels.some(c=>c.raw_count))svg.append(node('text',{x:left+20,y:lane.top+60,class:'empty-chart'},'此窗口没有原始采样，请缩小或移动视窗。'));
+      if(!lane.channels.some(c=>c.raw_count))svg.append(node('text',{x:left+20,y:lane.top+60,class:'empty-chart'},data?'此窗口没有原始采样，请缩小或移动视窗。':'正在加载原始曲线…'));
     });
     svg.prepend(grid); svg.append(waves);
     if(checkpointIndex>=0 && checkpoints[checkpointIndex]){
@@ -377,12 +383,13 @@
     setView(center-span/2,center+span/2,{keepCheckpoint:true,delay:0});checkpointText();
   }
   async function load() {
-    if(stale)return;clearTimeout(timer);if(controller)controller.abort();controller=new AbortController();const requestId=++serial;
+    if(stale || !isActive())return;clearTimeout(timer);if(controller)controller.abort();controller=new AbortController();const requestId=++serial;
     const range=[...view], names=[...selected];if(!names.length)return;
     const resultToken=document.querySelector('form[action="/download/json"] input[name=token]');
+    loading=true;lastWidth=Math.max(900,scroll.clientWidth-2);
     error.hidden=true;status.textContent=`正在读取 ${names.length} 个通道并计算显示数据… 首次加载真实通道可能需要数秒。`;
     try{
-      const response=await fetch('/api/series',{method:'POST',headers:{'Content-Type':'application/json'},signal:controller.signal,body:JSON.stringify({kind:resultToken?'result':'chart',token:resultToken?resultToken.value:page.chart.token,channels:names,view_start:iso(range[0]),view_end:iso(range[1]),display_mode:mode.value,bandwidth_seconds:$('chart-bandwidth').value,pixel_width:Math.max(900,scroll.clientWidth-2),include_checkpoints:needCheckpoints})});
+      const response=await fetch('/api/series',{method:'POST',headers:{'Content-Type':'application/json'},signal:controller.signal,body:JSON.stringify({kind:resultToken?'result':'chart',token:resultToken?resultToken.value:page.chart.token,channels:names,view_start:iso(range[0]),view_end:iso(range[1]),display_mode:mode.value,bandwidth_seconds:$('chart-bandwidth').value,pixel_width:lastWidth,include_checkpoints:needCheckpoints})});
       const body=await response.json();if(!response.ok)throw new Error(body.error || '图表数据读取失败');if(requestId!==serial || stale)return;
       data=body;if(body.checkpoints){checkpoints=body.checkpoints;needCheckpoints=false;checkpointIndex=-1;}
       if(pinnedChannel && !names.includes(pinnedChannel))pinnedChannel=null;
@@ -392,6 +399,7 @@
       const kinds=[...new Set(body.channels.map(c=>modes[c.mode]))].join('／');
       status.textContent=`${body.window_start} → ${body.window_end} · ${body.channels.length} 个通道，原始 ${raw.toLocaleString()} 点，显示 ${shown.toLocaleString()} 点 · ${kinds}。${body.channels.some(c=>['moving','kernel'].includes(c.mode))?`显示平滑窗口／带宽 ${body.bandwidth_seconds.toPrecision(4)} 秒，基于时间桶统计。`:''}${body.channels.some(c=>c.kind==='categorical')?'类别通道保持状态序列，不参与数值平滑。':''}处理仅用于显示，不改变检测和评分。${body.source==='demo'?'当前为演示合成序列。':''}`;
     }catch(problem){if(problem.name==='AbortError' || requestId!==serial)return;status.textContent='图表读取失败，评分结果保持不变。';error.textContent=problem.message;error.hidden=false;}
+    finally{if(requestId===serial)loading=false;}
   }
 
   function pointerPosition(event,target) {return new DOMPoint(event.clientX,event.clientY).matrixTransform(target.getScreenCTM().inverse());}
@@ -479,13 +487,24 @@
   [layout,$('chart-extrema'),$('chart-event-colors')].forEach(e=>e.addEventListener('change',()=>renderSoon()));
   $('chart-pred-next').addEventListener('click',()=>jump(1));$('chart-pred-previous').addEventListener('click',()=>jump(-1));$('chart-pred-focus').addEventListener('click',focusCheckpoint);
   $('chart-back').addEventListener('click',()=>{const old=history.pop();if(old){checkpointIndex=old.checkpoint;setView(old.start,old.end,{keepCheckpoint:true,delay:0});checkpointText();}});
-  document.addEventListener('keydown',event=>{if(stale || event.ctrlKey || event.metaKey || event.altKey || event.target.matches('input,textarea,select,[contenteditable=true]'))return;if(event.key.toLowerCase()==='j'){event.preventDefault();jump(1);}if(event.key.toLowerCase()==='k'){event.preventDefault();jump(-1);}});
-  scroll.addEventListener('scroll',hideHover);window.addEventListener('blur',hideHover);
-  let resizeTimer;window.addEventListener('resize',()=>{clearTimeout(resizeTimer);resizeTimer=setTimeout(()=>{renderSoon();schedule(0);},200);});
+  document.addEventListener('keydown',event=>{if(stale || !isActive() || event.ctrlKey || event.metaKey || event.altKey || event.target.matches('input,textarea,select,[contenteditable=true]'))return;if(event.key.toLowerCase()==='j'){event.preventDefault();jump(1);}if(event.key.toLowerCase()==='k'){event.preventDefault();jump(-1);}},{signal:lifecycle.signal});
+  scroll.addEventListener('scroll',hideHover);window.addEventListener('blur',hideHover,{signal:lifecycle.signal});
+  let resizeTimer;window.addEventListener('resize',()=>{if(!isActive())return;clearTimeout(resizeTimer);resizeTimer=setTimeout(()=>{renderSoon();schedule(0);},200);},{signal:lifecycle.signal});
   window.addEventListener('esa:invalidate-chart',()=>{
     stale=true;clearTimeout(timer);if(controller)controller.abort();++serial;hideHover();data=null;svg.replaceChildren();tracks.replaceChildren();overview.replaceChildren();
     document.querySelectorAll('#raw-visualization input,#raw-visualization select,#raw-visualization button').forEach(e=>{e.disabled=true;});
     $('chart-channel-legend').replaceChildren();$('chart-event-legend').replaceChildren();status.textContent='输入或评分配置已改变，旧图表与预测已失效；重新提交后恢复浏览。';
-  });
+  },{signal:lifecycle.signal});
+  instance={selectChannel(channel){
+      if(stale||!allBoxes.some(box=>box.value===channel))return;
+      allBoxes.forEach(box=>{box.checked=box.value===channel;});
+      $('chart-channel-search').value='';allBoxes.forEach(box=>{box.parentElement.hidden=false;});
+      countChannels();
+      if(selected.length!==1||selected[0]!==channel)$('chart-apply-channels').click();
+    },
+    show(){if(stale)return;draw();if(!loading&&(!data||lastWidth!==Math.max(900,scroll.clientWidth-2)))schedule(0);},
+    destroy(){stale=true;++serial;clearTimeout(timer);clearTimeout(wheelEnd);clearTimeout(resizeTimer);if(frame)cancelAnimationFrame(frame);if(controller)controller.abort();lifecycle.abort();data=null;}};
   date.min=iso(domain[0]).slice(0,19);date.max=iso(domain[1]).slice(0,19);updateRangeControls();draw();load();
+  }
+  window.ESAChart={init,selectChannel(channel){instance?.selectChannel(channel);},destroy(){const old=instance;instance=null;old?.destroy();}};
 })();

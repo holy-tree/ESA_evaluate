@@ -19,7 +19,7 @@ from evaluator import evaluate
 from chart_data import build_view, navigation_range
 from telemetry import TelemetryStore
 from validation import parse_csv, parse_json, validate_records
-from leaderboard import IdentityError, LeaderboardError, LeaderboardStore, ranking_scope, resolve_identity, upload_basename
+from leaderboard import IdentityError, LeaderboardError, LeaderboardStore, resolve_identity, upload_basename
 
 
 def create_app(test_config=None):
@@ -83,6 +83,7 @@ def create_app(test_config=None):
                     range_start=values.get("range_start", ""), range_end=values.get("range_end", ""),
                     range_confirmed=values.get("confirm_range") == "yes",
                     max_bytes=app.config["MAX_CSV_BYTES"], max_records=app.config["MAX_RECORDS"])
+        error_module = "protocol"
         if request.method == "POST":
             channels = request.form.getlist("channel")
             starts, ends = request.form.getlist("starttime"), request.form.getlist("endtime")
@@ -110,6 +111,7 @@ def create_app(test_config=None):
                     kwargs = dict(start=view["range_start"], end=view["range_end"], confirmed=view["range_confirmed"])
             dataset = load_dataset(cfg, require_range=request.method == "POST", **kwargs)
             view.update(dataset=dataset, cfg=dataset["config"])
+            error_module = "submit"
             if request.method == "GET":
                 view["rows"] = [dict(channel=dataset["channels"][0], starttime="", endtime="")]
             elif values.get("action") != "leaderboard":
@@ -172,25 +174,35 @@ def create_app(test_config=None):
                                  navigation_start=bounds[0], navigation_end=bounds[1],
                                  channel=first["channel"] if first else ds["channels"][0],
                                  date=(first["start"] if first else cfg["start"])[:10])
-            try:
-                scope = ranking_scope(cfg, ds["channels"], category, fingerprint(ds, category))
-                view["board"] = rankings.board(scope)
-            except (LeaderboardError, OSError) as exc:
-                view["leaderboard_error"] = view["leaderboard_error"] or f"排行榜读取失败：{exc}"
+        try:
+            view["board"] = rankings.board()
+        except (LeaderboardError, OSError) as exc:
+            view["leaderboard_error"] = view["leaderboard_error"] or f"排行榜读取失败：{exc}"
+        modules = ("protocol", "submit", "validation", "results", "curves", "leaderboard")
+        action = values.get("action", "evaluate")
+        if request.method == "POST":
+            active = "leaderboard" if action == "leaderboard" else "results" if view["result"] else "submit" if view["identity_error"] else error_module if view["error"] else "validation" if view["report"] else "submit"
+        else:
+            active = values.get("module", "protocol")
+        view["active_module"] = active if active in modules else "protocol"
+        view["page_meta"] = dict(active_module=view["active_module"], is_post=request.method == "POST", action=action,
+            has_result=view["result"] is not None, has_report=view["report"] is not None,
+            report_has_errors=bool(view["report"] and view["report"]["errors"]),
+            error=view["error"], identity_error=view["identity_error"], leaderboard_error=view["leaderboard_error"])
         return render_template("index.html", **view)
 
     @app.get("/leaderboard")
     def leaderboard_page():
         try:
-            catalogue = rankings.catalogue()
-            key = request.args.get("scope")
-            scope = next((r for r in catalogue if r["key"] == key), None) if key else (catalogue[0] if catalogue else None)
-            if key and scope is None:
-                return render_template("leaderboard.html", catalogue=catalogue, board=None, error="该榜单不存在，请选择其他评测配置。"), 404
-            board = rankings.board(scope) if scope else None
-            return render_template("leaderboard.html", catalogue=catalogue, board=board, error=None)
+            return render_template("leaderboard.html", board=rankings.board(), error=None)
         except (LeaderboardError, OSError) as exc:
-            return render_template("leaderboard.html", catalogue=[], board=None, error=f"排行榜读取失败：{exc}"), 503
+            return render_template("leaderboard.html", board=None, error=f"排行榜读取失败：{exc}"), 503
+
+    @app.route("/api/datasets/custom", methods=["GET", "POST"])
+    def custom_dataset_interface():
+        return dict(status="not_implemented", enabled=False,
+                    message="自定义数据集接入接口已预留，当前尚未启用。",
+                    required_config=["mission_id", "version", "labels", "Category/anomaly_types", "target_channels", "start", "end"]), 501
 
     @app.post("/api/series")
     def raw_series():

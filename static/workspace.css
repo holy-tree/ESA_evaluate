@@ -1,0 +1,25 @@
+body.workspace-layout{min-height:100dvh}
+.workspace-layout>header{flex:none}
+.workspace-main{width:100%;margin:0 auto}
+.workspace-main .intro{flex:none;padding:16px 0 12px}
+.workspace-main .intro h1{font-size:25px;margin:4px 0}
+.workspace-main .intro p{margin:3px 0}
+.workspace-main .intro .eyebrow{font-size:10px}
+.workspace-main .intro-stat b{font-size:36px}
+.workspace-shell{background:#fff;border:1px solid var(--line);border-radius:12px;overflow:clip}
+.module-nav{position:sticky;top:0;z-index:5;display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:4px;padding:9px;background:#f7f9fd;border-bottom:1px solid var(--line);flex:none}
+.module-nav button{background:transparent;color:#5c718d;border:1px solid transparent;padding:9px 6px;font-size:13px}
+.module-nav button[aria-selected=true]{background:#fff;border-color:#d1def0;color:#1d4ed8;box-shadow:0 2px 5px #173a5b0d}
+.module-nav button[data-ready=true]:after{content:'';display:inline-block;width:5px;height:5px;background:#14a18a;border-radius:50%;margin-left:6px;vertical-align:middle}
+.workspace-content{min-width:0;overflow-anchor:none}
+.workspace-content .module-panel.panel,.workspace-content .module-panel>.panel{margin:0;border:0;border-radius:0;box-shadow:none;padding:22px}
+.module-panel{min-width:0}
+.module-empty{padding:42px 24px;color:var(--muted);text-align:center}
+.module-empty p{margin-bottom:15px}
+.workspace-status{flex:none;font-size:12px;padding:9px 20px;background:#eef4ff;color:#31577e;border-bottom:1px solid #dce7f7}
+.workspace-status.is-error{background:#fff3f3;color:#a73543}
+#page-feedback:empty{display:none}
+#page-feedback .alert{margin:0;border-radius:0;border-width:0 0 1px}
+.workspace-main>footer{flex:none;padding:7px 0;font-size:10px}
+#evaluation-form[aria-busy=true]{cursor:progress}
+@media(max-width:760px){.workspace-main .intro{padding:10px 0}.workspace-main .intro h1{font-size:19px}.workspace-main .intro p:last-child,.workspace-main .eyebrow{display:none}.module-nav{grid-template-columns:repeat(3,minmax(0,1fr));padding:5px;gap:3px}.module-nav button{font-size:12px;padding:7px 3px}.workspace-content .module-panel.panel,.workspace-content .module-panel>.panel{padding:15px}.workspace-main>footer{font-size:9px;padding:5px 0}}

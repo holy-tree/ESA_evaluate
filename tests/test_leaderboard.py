@@ -30,13 +30,13 @@ def test_best_per_id_sorting_timestamp_and_restart(tmp_path):
     first=save(store,"alice",.8,1)
     lower=save(store,"alice",.4,2)
     save(store,"bob",.9,3)
-    board=LeaderboardStore(tmp_path).board(scope_of(fake_result()))
+    board=LeaderboardStore(tmp_path).board()
     assert [e["user_id"] for e in board["entries"]] == ["bob","alice"]
     assert board["entries"][1]["submitted_at"] == first["submitted_at"]
     assert not lower["best_updated"] and lower["best_score"] == .8
     higher=save(store,"alice",.95,4)
     tied=save(store,"alice",.95,5)
-    board=store.board(scope_of(fake_result()))
+    board=store.board()
     assert len(board["entries"]) == 2
     assert board["entries"][0]["submission_id"] == higher["submission_id"]
     assert not tied["best_updated"]
@@ -49,31 +49,35 @@ def test_equal_score_uses_earliest_submission_then_id(tmp_path):
     save(store,"later",.5,2)
     save(store,"z",.5,1)
     save(store,"a",.5,1)
-    entries=store.board(scope_of(fake_result()))["entries"]
+    entries=store.board()["entries"]
     assert [e["user_id"] for e in entries] == ["a","z","later"]
 
 
 @pytest.mark.parametrize("field,value", [("mission_id","Mission2"),("version","fixture-2"),("source","real"),
     ("category_mode","anomaly"),("start","2024-01-01T00:00:01Z"),("end","2024-01-01T00:01:30Z"),
     ("target_channels",["a"]),("evaluation_protocol","future-protocol"),("beta",1.0)])
-def test_rankings_do_not_mix_protocol_scopes(tmp_path,field,value):
+def test_unified_rankings_keep_best_across_configurations(tmp_path,field,value):
     store=LeaderboardStore(tmp_path)
     save(store,"same-user",.6)
     changed=fake_result(.9)
     changed["config"][field]=value
     store.record(changed,"same-user","provided","a.json","json")
     assert scope_of(changed)["key"] != scope_of(fake_result())["key"]
-    assert len(store.catalogue()) == 2
-    assert store.board(scope_of(fake_result()))["entries"][0]["score"] == .6
+    board=store.board()
+    assert board["total_submissions"] == 2
+    assert len(board["entries"]) == 1
+    assert board["entries"][0]["score"] == .9
+    assert board["entries"][0]["scope"][field] == value
 
 
-def test_labels_fingerprint_isolated_and_channel_order_is_canonical(tmp_path):
+def test_labels_fingerprint_is_preserved_and_channel_order_is_canonical(tmp_path):
     store=LeaderboardStore(tmp_path)
     save(store,"user",.6)
     changed=fake_result(.8)
     changed["data_fingerprint"]="new-labels"
     store.record(changed,"user","provided",None,"manual")
-    assert len(store.catalogue()) == 2
+    assert store.board()["entries"][0]["score"] == .8
+    assert store.board()["entries"][0]["scope"]["data_fingerprint"] == "new-labels"
     ordered=fake_result()
     ordered["config"]["target_channels"].reverse()
     assert scope_of(ordered)["key"] == scope_of(fake_result())["key"]
@@ -83,11 +87,11 @@ def test_null_scores_are_saved_but_not_ranked_and_zero_is_ranked(tmp_path):
     store=LeaderboardStore(tmp_path)
     unranked=save(store,"user",None)
     assert not unranked["eligible"]
-    board=store.board(scope_of(fake_result()))
+    board=store.board()
     assert board["total_submissions"] == 1 and not board["entries"]
     zero=save(store,"user",0,1)
     assert zero["eligible"] and zero["best_updated"]
-    assert store.board(scope_of(fake_result()))["entries"][0]["score"] == 0
+    assert store.board()["entries"][0]["score"] == 0
 
 
 def test_concurrent_instances_preserve_all_submissions(tmp_path):
@@ -95,7 +99,7 @@ def test_concurrent_instances_preserve_all_submissions(tmp_path):
         return save(LeaderboardStore(tmp_path),f"user-{i}",i/50,i)
     with ThreadPoolExecutor(max_workers=8) as pool:
         list(pool.map(submit,range(20)))
-    board=LeaderboardStore(tmp_path).board(scope_of(fake_result()))
+    board=LeaderboardStore(tmp_path).board()
     assert board["total_submissions"] == len(board["entries"]) == 20
     assert board["entries"][0]["user_id"] == "user-19"
     assert not list(tmp_path.glob(".leaderboard-*.tmp"))
@@ -175,7 +179,7 @@ def test_default_input_priority_and_result_precedes_visualization(client):
     assert page.index('name="mode" value="csv"') < page.index('name="mode" value="json"') < page.index('name="mode" value="manual"')
     response=post_csv(client)
     text=response.get_data(as_text=True)
-    assert text.index('id="evaluation-result"') < text.index('id="leaderboard"') < text.index('id="raw-visualization"')
+    assert text.index('id="evaluation-result"') < text.index('id="raw-visualization"') < text.index('id="leaderboard"')
 
 
 def test_same_id_only_best_submission_is_shown_after_restart(tmp_path):
@@ -191,7 +195,10 @@ def test_same_id_only_best_submission_is_shown_after_restart(tmp_path):
     assert text.count('data-user-id="alice"') == 1
     assert original["submission"]["submitted_at"] in text
     assert lower["submission"]["submitted_at"] not in text
-    assert second.get("/leaderboard?scope=unknown").status_code == 404
+    unified=second.get("/leaderboard?scope=unknown")
+    assert unified.status_code == 200
+    assert 'data-user-id="alice"' in unified.get_data(as_text=True)
+    assert 'id="board-scope"' not in text
 
 
 def test_persistence_failure_keeps_score_available_and_file_intact(client):

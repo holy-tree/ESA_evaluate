@@ -123,8 +123,8 @@ class LeaderboardStore:
                 temporary.unlink()
 
     @staticmethod
-    def _board(data, scope):
-        submissions = [r for r in data["submissions"] if r["scope_key"] == scope["key"]]
+    def _board(data):
+        submissions = data["submissions"]
         best = {}
         for row in submissions:
             if not row["eligible"]:
@@ -134,22 +134,13 @@ class LeaderboardStore:
             if old is None or ordering(row) < ordering(old):
                 best[row["user_id"]] = row
         entries = sorted(best.values(), key=lambda r: (-r["score"], r["submitted_at"], r["user_id"]))
-        return dict(key=scope["key"], config=scope["config"],
+        return dict(key="unified",
                     entries=[dict(r, rank=i+1) for i,r in enumerate(entries)],
                     total_submissions=len(submissions), ranked_submissions=sum(r["eligible"] for r in submissions))
 
-    def board(self, scope):
+    def board(self):
         with self._locked():
-            return self._board(self._read(), scope)
-
-    def catalogue(self):
-        with self._locked():
-            data = self._read()
-            groups = {}
-            for row in data["submissions"]:
-                scope = groups.setdefault(row["scope_key"], dict(key=row["scope_key"], config=row["scope"], last_submission=row["submitted_at"]))
-                scope["last_submission"] = max(scope["last_submission"], row["submitted_at"])
-            return sorted(groups.values(), key=lambda r: r["last_submission"], reverse=True)
+            return self._board(self._read())
 
     def record(self, result, user_id, id_source, filename, mode, submitted_at=None):
         score = result["metrics"]["f0_5"]
@@ -167,7 +158,7 @@ class LeaderboardStore:
                 score=score, eligible=score is not None, submitted_at=now)
             data["submissions"].append(row)
             self._write(data)
-            board = self._board(data, scope)
+            board = self._board(data)
             best = next((r for r in board["entries"] if r["user_id"] == user_id), None)
             return dict(submission_id=row["submission_id"], user_id=user_id, id_source=id_source, filename=filename,
                 input_mode=mode, submitted_at=now, score=score, persisted=True, eligible=row["eligible"],
