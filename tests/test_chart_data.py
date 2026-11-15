@@ -105,6 +105,10 @@ def test_event_navigation_uses_original_start_across_selected_channels(tmp_path)
     result = build_view(store, ds, ds["channels"], "2024-01-03", "2024-01-04")
     assert all(c["events"][0]["event_start"] == "2024-01-01T22:00:00Z" for c in result["channels"])
     assert all(c["events"][0]["intervals"][0]["start_time"] == "2024-01-03T00:00:00Z" for c in result["channels"])
+    assert result["channels"][0]["events"][0]["label_intervals"] == [dict(
+        start_time="2024-01-02T20:00:00Z", end_time="2024-01-04T00:00:00Z")]
+    assert result["channels"][1]["events"][0]["label_intervals"] == [dict(
+        start_time="2024-01-01T22:00:00Z", end_time="2024-01-04T00:00:00Z")]
     only_first = build_view(store, ds, ["channel_1"], "2024-01-03", "2024-01-04")
     assert only_first["channels"][0]["events"][0]["event_start"] == "2024-01-02T20:00:00Z"
 

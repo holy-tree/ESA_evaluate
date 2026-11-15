@@ -164,7 +164,10 @@
     parent.append(node('rect',{x:plot.x(a)-(width-actual)/2,y:top,width,height,rx:2,...attributes}));
   }
   function unionDetections(channels) {
-    const rows=channels.flatMap(c => c.detections.map(i => [Date.parse(i.start_time),Date.parse(i.end_time)])).sort((a,b) => a[0]-b[0]);
+    return unionIntervals(channels.flatMap(c => c.detections.map(i => [Date.parse(i.start_time),Date.parse(i.end_time)])));
+  }
+  function unionIntervals(intervals) {
+    const rows=intervals.sort((a,b) => a[0]-b[0]);
     const out=[];
     for (const r of rows) { if (out.length && r[0] <= out.at(-1)[1]) out.at(-1)[1]=Math.max(out.at(-1)[1],r[1]); else out.push([...r]); }
     return out;
@@ -282,12 +285,14 @@
     svg.setAttribute('width',width); svg.style.width=`${width}px`; svg.setAttribute('height',height); svg.setAttribute('viewBox',`0 0 ${width} ${height}`);
     plot={left,right,lanes,x:t=>left+(t-view[0])/(view[1]-view[0])*(right-left),inverse:x=>view[0]+(x-left)/(right-left)*(view[1]-view[0])};
     const defs=node('defs'); svg.append(defs);
+    const hatch=node('pattern',{id:'anomaly-hatch',patternUnits:'userSpaceOnUse',width:8,height:8,patternTransform:'rotate(45)'});
+    hatch.append(node('path',{d:'M0 0V8',class:'anomaly-hatch-line'}));defs.append(hatch);
     const grid=node('g',{class:'chart-grid'}); const axisTicks=ticks(...view); let prior=-Infinity;
     for (const t of axisTicks.values) {
       const px=plot.x(t.time); grid.append(node('line',{x1:px,x2:px,y1:32,y2:height-37}));
       if (px-prior>85) {grid.append(node('text',{x:px,y:height-12,'text-anchor':'middle'},t.label));prior=px;}
     }
-    const waves=node('g',{class:'waveform-stack'});
+    const waves=node('g',{class:'waveform-stack'}),boundaries=node('g',{class:'anomaly-boundaries','pointer-events':'none'});
     lanes.forEach((lane,laneIndex)=>{
       const clipId=`lane-${laneIndex}`; const clip=node('clipPath',{id:clipId});
       clip.append(node('rect',{x:left,y:lane.top,width:right-left,height:lane.height})); defs.append(clip);
@@ -304,6 +309,14 @@
         if(plot.x(b)-plot.x(a)>130) background.append(node('text',{x:plot.x(a)+6,y:lane.top+18,class:'outside-label'},'本次评分范围外'));
       }
       for(const [a,b] of unionDetections(lane.channels)) bandRect(background,a,b,lane.top,lane.height,{class:`detection-shadow${a===b ? ' point-detection' : ''}`,'data-start':iso(a),'data-end':iso(b)});
+      const anomalies=lane.channels.flatMap(c=>c.events.filter(e=>e.category==='Anomaly')
+        .flatMap(e=>(e.label_intervals||e.intervals).map(i=>[Date.parse(i.start_time),Date.parse(i.end_time)])));
+      // Fill the union once; retain actual label endpoints, not viewport or sample-gap edges.
+      for(const [a,b] of unionIntervals(anomalies))bandRect(background,a,b,lane.top,lane.height,{class:'anomaly-region',fill:'url(#anomaly-hatch)','data-start':iso(a),'data-end':iso(b)});
+      const boundaryLayer=node('g',{'clip-path':`url(#${clipId})`,'data-lane':laneIndex});
+      for(const time of new Set(anomalies.flat()))if(time>=view[0]&&time<=view[1])boundaryLayer.append(node('line',{
+        x1:plot.x(time),x2:plot.x(time),y1:lane.top,y2:lane.bottom,class:'anomaly-boundary','data-time':iso(time)}));
+      boundaries.append(boundaryLayer);
       svg.append(background);
       lane.channels.forEach(c=>{
         const group=node('g',{class:'series-layer','data-channel':c.channel,'clip-path':`url(#${clipId})`}); waveNodes.set(c.channel,group);
@@ -333,10 +346,10 @@
       });
       if(!lane.channels.some(c=>c.raw_count))svg.append(node('text',{x:left+20,y:lane.top+60,class:'empty-chart'},data?'此窗口没有原始采样，请缩小或移动视窗。':'正在加载原始曲线…'));
     });
-    svg.prepend(grid); svg.append(waves);
+    svg.prepend(grid); svg.append(waves,boundaries);
     if(checkpointIndex>=0 && checkpoints[checkpointIndex]){
       const p=checkpoints[checkpointIndex],g=node('g',{class:'checkpoint-highlight','pointer-events':'none'});
-      bandRect(g,Date.parse(p.start),Date.parse(p.end),32,height-69,{fill:'none',stroke:'#d97706','stroke-width':2,'stroke-dasharray':'5 4'});svg.append(g);
+      bandRect(g,Date.parse(p.start),Date.parse(p.end),32,height-69,{fill:'none',stroke:'#347eaf','stroke-width':2,'stroke-dasharray':'5 4'});svg.append(g);
     }
     lanes.forEach(l=>svg.append(node('rect',{x:left,y:l.top,width:right-left,height:l.height,class:'chart-hit-area'})));
     const hoverGroup=node('g',{class:'chart-hover',visibility:'hidden','pointer-events':'none'});

@@ -15,7 +15,8 @@ details.chart-channel-picker{position:relative;margin:0;min-width:190px}
 .channel-picker-body button{padding:7px 9px}
 .chart-legend,.chart-channel-legend{display:flex;flex-wrap:wrap;gap:10px 18px;color:var(--muted);font-size:12px;margin:12px 0}
 .chart-legend span{display:inline-flex;align-items:center;gap:7px}
-.detection-key:before{content:'';width:20px;height:13px;background:rgba(210,95,95,.1);border-radius:2px}
+.anomaly-key:before{content:'';width:24px;height:14px;background:repeating-linear-gradient(135deg,transparent 0 5px,rgba(210,108,119,.55) 5px 6px,transparent 6px 8px);border-left:1.5px dashed #d27a85;border-right:1.5px dashed #d27a85}
+.detection-key:before{content:'';width:20px;height:13px;background:rgba(52,126,175,.18);border:1px solid rgba(52,126,175,.35);border-radius:2px}
 .range-key:before{content:'';width:20px;height:13px;background:rgba(37,99,235,.12);border-radius:2px}
 #raw-visualization{min-width:0}
 .raw-chart-scroll{display:block;width:100%;max-width:100%;max-height:760px;overflow:auto;overscroll-behavior:contain;border:1px solid var(--line);border-radius:8px;background:#fcfdff;scrollbar-gutter:stable}
@@ -28,7 +29,10 @@ details.chart-channel-picker{position:relative;margin:0;min-width:190px}
 .series-layer.is-highlighted .raw-curve,.series-layer.is-highlighted .event-curve{stroke-width:4;filter:drop-shadow(0 2px 2px #0f294449)}
 .quantile-envelope{opacity:.11;stroke:none}
 .extrema-envelope{opacity:.045;stroke:none}
-.detection-shadow{fill:rgba(210,95,95,.1);stroke:none}
+.detection-shadow{fill:rgba(52,126,175,.18);stroke:none}
+.anomaly-hatch-line{fill:none;stroke:#d26c77;stroke-opacity:.5;stroke-width:1.2}
+.anomaly-region{pointer-events:none}
+.anomaly-boundary{stroke:#d27a85;stroke-opacity:.9;stroke-width:1.4;stroke-dasharray:5 4;vector-effect:non-scaling-stroke}
 .outside-evaluation{fill:#e1e7ef;opacity:.6}
 .outside-label{fill:#708297;font-size:11px}
 .chart-hit-area{fill:transparent;cursor:grab}
@@ -55,7 +59,7 @@ details.chart-channel-picker{position:relative;margin:0;min-width:190px}
 #chart-overview{display:block;width:100%;border:1px solid var(--line);border-radius:7px;background:#fafcff;touch-action:none;user-select:none}
 .overview-domain{fill:#edf2f8;stroke:#d8e2f0}
 .overview-evaluation{fill:#dce8f9}
-.overview-prediction{stroke:#d97706;stroke-width:1.5;opacity:.75}
+.overview-prediction{stroke:#347eaf;stroke-width:1.5;opacity:.85}
 .overview-window{fill:#2563eb12;stroke:#2563eb;stroke-width:1.6;cursor:grab}
 .overview-handle{fill:#2563eb;rx:2;cursor:ew-resize}
 .overview-label{fill:#718096;font-size:10px}
