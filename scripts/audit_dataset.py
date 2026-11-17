@@ -12,14 +12,14 @@ import numpy as np
 import pandas as pd
 import portion as P
 
-from datasets import MISSIONS, iso, load_config, read_csv, timestamp
+from datasets import MISSIONS, iso, load_config, load_target_channels, read_csv, timestamp
 
 
 def audit_labels(cfg, channel_rows):
     _, labels = read_csv(cfg["paths"]["labels"])
     _, types = read_csv(cfg["paths"]["anomaly_types"])
     categories = {r["id"]: r["category"] for r in types}
-    targets = {r["channel"] for r in channel_rows if r["target"].lower() in ("yes", "true", "1")}
+    targets = set(load_target_channels(cfg))
     scopes = {}
     for scope in ("all_channels", "target_channels"):
         rows = [r for r in labels if scope == "all_channels" or r["channel"] in targets]
@@ -136,15 +136,16 @@ def main():
         print("values:", frame.iloc[:10, 0].tolist())
         return
     _, channels = read_csv(cfg["paths"]["channels"])
+    targets = set(load_target_channels(cfg))
     report = dict(mission=args.mission, version=cfg["version"], channels=len(channels),
-        target_channels=sum(r["target"].lower() in ("yes", "true", "1") for r in channels),
+        target_channels=len(targets),
         labels=audit_labels(cfg, channels))
     if args.telemetry:
         folder = Path(cfg["paths"]["labels"]).parent / "channels"
         stats = []
         for number, r in enumerate(channels, 1):
             print(f"{args.mission} [{number}/{len(channels)}] {r['channel']}", file=sys.stderr, flush=True)
-            stats.append(telemetry_channel(folder / f"{r['channel']}.zip", r["target"].lower() in ("yes", "true", "1")))
+            stats.append(telemetry_channel(folder / f"{r['channel']}.zip", r["channel"] in targets))
         report["telemetry"] = dict(all_channels=aggregate(stats), target_channels=aggregate([r for r in stats if r["target"]]), channels=stats)
     if args.output:
         args.output.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")

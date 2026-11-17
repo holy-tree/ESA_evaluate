@@ -1,6 +1,6 @@
 {
   "mission_id": "Mission2",
-  "default_categories": "both",
+  "default_categories": "all",
   "sources": {
     "demo": {
       "version": "demo-1.0",

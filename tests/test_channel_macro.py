@@ -112,3 +112,20 @@ def test_single_channel_hand_case_and_duplicate_predictions():
     assert result["metrics"]["f0_5"] == pytest.approx(.44871794871794873)
     assert result["metrics"]["false_positive_count"] == 1
     assert len(result["predictions"]) == 2
+
+
+def test_communication_gap_is_a_default_target_with_channel_local_misses():
+    ds = scope([label("a", "channel_1", 10, 20),
+                label("gap", "channel_1", 40, 50, "Communication Gap"),
+                label("rare", "channel_2", 60, 70, "Rare Event")])
+    missing_gap = evaluate(ds, [prediction("channel_1", 12, 18), prediction("channel_2", 62, 68)])
+    assert missing_gap["config"]["category_mode"] == "all"
+    assert missing_gap["config"]["selected_categories"] == ["Anomaly", "Rare Event", "Communication Gap"]
+    assert missing_gap["metrics"]["event_count"] == 3
+    assert missing_gap["metrics"]["detected_count"] == 2
+    assert missing_gap["metrics"]["missed_count"] == 1
+    assert missing_gap["channel_results"][0]["metrics"]["recall"] == .5
+    assert missing_gap["metrics"]["f0_5"] == pytest.approx((5/6+1)/2)
+    all_hits = evaluate(ds, [prediction("channel_1", 12, 18), prediction("channel_1", 42, 48), prediction("channel_2", 62, 68)])
+    assert all_hits["metrics"]["f0_5"] == 1
+    assert all_hits["metrics"]["false_positive_count"] == 0

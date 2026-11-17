@@ -1,6 +1,6 @@
 {
   "mission_id": "Mission1",
-  "default_categories": "both",
+  "default_categories": "all",
   "sources": {
     "demo": {
       "version": "demo-1.0",
@@ -12,12 +12,15 @@
       "protocol": "演示数据；100 秒自定义窗口，非真实 ESA 模型性能。"
     },
     "real": {
-      "version": "local-unversioned",
+      "version": "local-filtered-2007-v1",
       "labels": "ESA-Mission1/labels.csv",
       "anomaly_types": "ESA-Mission1/anomaly_types.csv",
       "channels": "ESA-Mission1/channels.csv",
-      "start": "2000-01-01T00:00:00.969000Z",
+      "channels_are_targets": true,
+      "start": "2007-01-01T00:00:00Z",
       "end": "2013-12-31T23:59:59.937000Z",
+      "observation_start": "2000-01-01T00:00:00.969000Z",
+      "observation_end": "2013-12-31T23:59:59.937000Z",
       "observation_range_source": {
         "method": "target_channel_timestamp_envelope",
         "description": "离线逐个读取目标通道 ZIP 中的 DatetimeIndex，取全体最早及最晚采样时刻；无时区索引解释为 UTC。",
@@ -25,7 +28,7 @@
         "latest_channel_start": "2000-01-01T00:06:45.177000Z",
         "earliest_channel_end": "2013-12-31T23:57:38.481000Z"
       },
-      "protocol": "真实 ESA 标签；默认窗口来自 58 个目标通道的实际采样时间边界。未声明官方训练/测试划分；请将 version 改成实际数据发布版本。"
+      "protocol": "本地筛选标签版本；默认评分窗口为 2007 年至 2013 年末，图表保留 2000 年至 2013 年原始观测范围。新 channels.csv 全部 58 行均为目标通道；其中 channel_47 至 channel_52 没有当前标签，未定义指标按通道排除。固定同时评测 Anomaly、Rare Event、Communication Gap；类别表定义但 labels.csv 未提供区间的事件不生成虚构标签。"
     }
   }
 }

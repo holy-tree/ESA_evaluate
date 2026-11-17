@@ -54,19 +54,23 @@ dataset_root: 'D:/Projects/pycharm/ESA'
 
 | 配置项 | 含义 |
 |---|---|
-| `sources.real.version` | 数据版本；当前为 `local-unversioned`，有实际版本时请更新 |
+| `sources.real.version` | 本地数据版本；Mission1 为 `local-filtered-2007-v1`，Mission2／3 为 `local-unversioned` |
 | `sources.real.labels` / `anomaly_types` / `channels` | 相对于 YAML 中 `dataset_root` 的文件路径 |
-| `sources.real.start` / `end` | 完整观测起止时间，ISO-8601；页面自动填入，使用默认值无需确认。为 `null` 或改用其他窗口时需填写并勾选确认 |
+| `sources.real.start` / `end` | 默认评分起止时间，ISO-8601；页面自动填入，使用默认值无需确认。为 `null` 或改用其他窗口时需填写并勾选确认 |
+| `sources.real.observation_start` / `observation_end`（可选） | 独立的曲线全历史浏览范围；未设置时使用 `start/end` |
 | `sources.real.target_channels`（可选） | 显式目标通道列表；未设置时读取 `channels.csv` 的 `Channel,Target` |
+| `sources.real.channels_are_targets`（可选） | 声明无 `Target` 列的通道表已全部是目标通道；Mission1 新 `Channel,Group` 表设置为 `true`。有 `Target` 列时仍按其标志筛选 |
 | `sources.real.protocol` | 当前评测协议说明；Mission3 使用自定义评测窗口 |
 
 演示配置位于 `sources.demo`，数据文件路径相对于项目根目录，已提供可直接运行的窗口和标签。
 
-真实配置已填入本地目标通道的实际采样时间边界（Mission1：2000–2013 年；Mission2：2000–2003 年上半年；Mission3：2000–2008 年初），精确值及来源保存在配置的 `start`、`end` 和 `observation_range_source` 中。取全体目标通道最早到最晚时刻的外包范围，并非所有通道共同覆盖的交集，也不表示其间没有缺测；未标注的缺测不额外推断排除。更换数据版本或目标通道时需重新确认窗口。
+真实曲线的观测边界来自本地目标通道实际采样时间（Mission1：2000–2013 年；Mission2：2000–2003 年上半年；Mission3：2000–2008 年初），来源保存在 `observation_range_source`。它是全体目标通道最早到最晚时刻的外包范围，不是共同覆盖交集，也不表示没有缺测。
+
+Mission1 新 CSV 使用筛选后的标签：1,452 行、91 个事件，保留的全部行与旧标签“2007 年起且排除 channel_47～channel_52”的筛选结果一致。经确认，其默认评分窗口设为 **2007-01-01T00:00:00Z → 2013-12-31T23:59:59.937000Z**；曲线通过独立 `observation_start/end` 继续浏览 2000–2013 年。新通道表的 58 个目标通道全部参与；6 个无标签通道的未定义指标按原规则排除，不从目标表删除。类别表中的 Communication Gap 定义仍保留，但新标签没有对应区间，因此本版本不凭类别表生成通信中断事件。更换数据版本或目标通道时需重新确认范围。
 
 一次性重新检查时间边界可执行 `uv run python scripts/scan_observation_ranges.py --mission Mission1`（也支持 Mission2、Mission3）。该离线命令逐个读取目标通道 ZIP 并输出各通道时间范围，不自动修改配置；评分本身不读取 ZIP。异常标签边界不用于推断观测范围。
 
-真实标签必需 `ID,Channel,StartTime,EndTime`。类别优先读取标签的 `Category`；缺少时通过 `anomaly_types.csv` 的 `ID,Category` 关联，不猜测类别。`Target` 支持 YES/NO、true/false、1/0；无法识别时需配置 `target_channels`。
+真实标签必需 `ID,Channel,StartTime,EndTime`。类别优先读取标签的 `Category`；缺少时通过 `anomaly_types.csv` 的 `ID,Category` 关联，不猜测类别。精简为 `ID,Category` 的类别表可直接使用。`Target` 支持 YES/NO、true/false、1/0；无该列时须显式声明 `channels_are_targets=true` 或配置 `target_channels`。
 
 ### 4. 启动应用
 
@@ -78,7 +82,7 @@ uv run app.py
 
 ### 5. 提交预测并查看结果
 
-1. 选择 Mission 与 `Anomaly + Rare Event`／`Anomaly only`。首页默认真实 ESA，不显示来源选择；演示数据仅通过上方显式演示链接访问，并保留演示标识。
+1. 选择 Mission；评分事件固定为 **Anomaly + Rare Event + Communication Gap**，页面直接展示，不提供类别选择。后端忽略旧链接或表单中的类别参数，始终按三类评分。首页默认真实 ESA，演示数据通过显式 `?source=demo` 链接访问，并保留演示标识。
 2. 真实配置未设置 `start`、`end` 时，填写完整观测窗口并勾选确认。窗口不会从预测或标签边界推断。
 3. 选择 CSV（默认）、JSON 或手动模式，填写用户 ID。上传时可留空，使用原文件名作为 ID；手动提交必须填写。对应演示模板／示例可直接下载。
 4. 在“提交预测”模块上传并预览／校验，修正错误后开始评测；手动模式填写预测后直接评测。提交通过异步请求完成，不刷新整页，保留文件选择、用户 ID 和表单内容。
@@ -86,7 +90,7 @@ uv run app.py
 
 模块切换保留结果表筛选／排序／展开和曲线缩放状态。原始 ZIP 只在首次打开曲线模块时读取，其他模块不会后台加载曲线；曲线快捷键仅在曲线模块生效。网络或文件错误不会替换整个页面，可保留输入重试。无 JavaScript 的普通表单 POST 仍可由后端处理，但交互切换与异步更新需要启用 JavaScript。
 
-修改 Mission、版本、类别、来源或时间窗口后必须重新校验和评分。图表通道筛选只改变显示。
+修改 Mission、版本、来源或时间窗口后必须重新校验和评分。图表通道筛选只改变显示。
 
 逐通道结果表支持点击列名按“默认 → 升序 → 降序 → 默认”循环排序，漏斗图标可设置文字／数值范围／不适用筛选；通道搜索与多列条件叠加。“恢复默认”清除排序和筛选，回到配置通道顺序；不适用数值始终置后。每个通道行可独立展开事件检出／漏检明细，排序时主行与明细一起移动；明细内“查看该通道曲线”直接进入曲线分析，并自动只选择对应通道。表格操作仅影响显示，分数、榜单和完整导出保持原评测范围。
 
@@ -165,13 +169,13 @@ JSON 可使用对象数组：
 - 时间统一 UTC，无时区输入按 UTC 解释，网页不做本地时区平移。
 - 真值为闭区间；普通预测为 `[start,end)`，结束于窗口末端时右闭；`start=end` 为闭点。内部独立点是区间输入适配扩展。
 - **每个目标通道独立评分：**只使用该通道的预测和标签，同一 ID 在该通道内组织为区间集合，不填平不连续片段；同通道预测求并集，一次预测仍可命中该通道多个事件。一个通道的预测不能命中另一通道的标签。
-- 未选类别仍从**对应通道**的正常时长中排除。合并预测仅在与该通道所有类别标签均不相交时计事件误报；延伸到正常时间的部分仍参与 TNR 修正。其他通道的标签不会保护本通道误报。
+- **固定三类目标：**Anomaly、Rare Event、Communication Gap 同时进入各通道的事件总数、检出／漏检与召回率计算。类别定义表中的 ID 必须有实际标签区间才构成事件。其他类别（如 Invalid Segment）仍从**对应通道**的正常时长中排除。合并预测仅在与该通道所有类别标签均不相交时计事件误报；延伸到正常时间的部分仍参与 TNR 修正。其他通道的标签不会保护本通道误报。
 - 每通道 `P_corrected = P_event × TNR`；`F0.5 = 1.25 × P_corrected × Recall / (0.25 × P_corrected + Recall)`。
 - **总体为算术宏平均：**对每个通道先算完整指标，再对相应指标取均值；不按事件数、时长或预测行数加权。总体 F0.5 直接平均各通道 F0.5，不能用总体精确率／召回率重算；总体修正精确率也不能用总体 P_event × 总体 TNR 代替。
 - 评分范围为配置中的全部目标通道，未报警通道也参与，不由图表选择决定。有真实事件但预测为空的通道 F0.5=0；无可评测事件或正常时长为零时，相应未定义指标为 `null`，不填 0 或 1。各总体指标仅平均该指标非 null 的通道，分别导出参与通道数和排除列表；因此分母可能不同。无事件通道的误报仍展示，不因其 F0.5 不适用而隐藏。
 - 事件数、检出／漏检数为**事件—通道对合计**，同一 ID 影响两个通道时计两对；另返回去重事件 ID 数。误报区间为各通道合计，时长合计单位是“通道·秒”，这些是统计合计，不是宏平均分数。
 
-这是按需求定义的 `channel-macro-corrected-eventwise-f0.5/v1` 协议，不等同于官方跨通道合并的总体 event-wise 分数；仅每通道的区间评分核心沿用 ESA 定义。`evaluate()` 为应用使用的逐通道／宏平均入口，`evaluate_eventwise()` 保留参考区间核心，供单通道计算与官方交叉验证。
+这是按需求定义的 `channel-macro-corrected-eventwise-f0.5/v2` 协议，v2 默认包含上述三类，不等同于官方跨通道合并的总体 event-wise 分数；仅每通道的区间评分核心沿用 ESA 定义。`evaluate()` 为应用使用的逐通道／宏平均入口，`evaluate_eventwise()` 保留参考区间核心，供单通道计算与官方交叉验证。Python 核心保留显式类别子集参数供参考核验，网页固定使用三类。协议版本参与预览／曲线指纹和签名验证，旧协议凭据需重新生成。统一排行榜保留历史记录，配置列展示各次最佳成绩实际使用的版本与类别，旧成绩不会自动重算。
 
 指标参考 [ESA-ADB 官方实现（固定提交 27ecde1）](https://github.com/kplabs-pl/ESA-ADB/blob/27ecde187aa631512cf38a4508474b01ebeb1eda/timeeval/metrics/ESA_ADB_metrics.py)，上游采用 [MIT 许可证](https://github.com/kplabs-pl/ESA-ADB/blob/27ecde187aa631512cf38a4508474b01ebeb1eda/LICENSE)。
 

@@ -26,7 +26,7 @@
     select.addEventListener('change',()=>{
       const filled=[...rows.querySelectorAll('input')].some(i=>i.value.trim());
       if((dirty||filled||data.has_result||document.querySelector('#upload-token').value)&&!window.confirm('切换评测配置后将清空旧输入和分数，继续吗？')){select.value=select.dataset.previous;return;}
-      const params=new URLSearchParams();['mission','source','category'].forEach(name=>params.set(name,document.querySelector('#'+name).value));
+      const params=new URLSearchParams();['mission','source'].forEach(name=>params.set(name,document.querySelector('#'+name).value));
       params.set('mode',form.querySelector('[name=mode]:checked').value);if(identity.value.trim())params.set('user_id',identity.value.trim());
       window.location.assign('/?'+params+'#protocol');
     });select.dataset.previous=select.value;

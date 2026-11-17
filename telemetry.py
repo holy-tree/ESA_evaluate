@@ -10,7 +10,7 @@ import numpy as np
 import pandas as pd
 import portion as P
 
-from datasets import CATEGORIES, DataError, iso, timestamp
+from datasets import CATEGORIES, DEFAULT_CATEGORY, DataError, iso, timestamp
 
 SCALES = {"day": ("D", pd.DateOffset(days=1), 2400),
           "month": ("MS", pd.DateOffset(months=1), 3720),
@@ -196,7 +196,7 @@ class TelemetryStore:
         return dict(times=times, values=values, kind=kind, categories=categories, gap_ns=gap_ns,
                     reference=reference)
 
-    def window(self, dataset, channel, date, scale, predictions=(), max_points=8000, category_mode="both"):
+    def window(self, dataset, channel, date, scale, predictions=(), max_points=8000, category_mode=DEFAULT_CATEGORY):
         if max_points < 4 or max_points > 20000:
             raise DataError("图表显示点数上限须在 4—20000 之间")
         if category_mode not in CATEGORIES:

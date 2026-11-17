@@ -8,10 +8,10 @@ from statistics import fmean
 
 import portion as P
 
-from datasets import CATEGORIES, DataError, iso
+from datasets import CATEGORIES, DEFAULT_CATEGORY, DataError, iso
 
 REFERENCE = "kplabs-pl/ESA-ADB@27ecde187aa631512cf38a4508474b01ebeb1eda"
-PROTOCOL = "channel-macro-corrected-eventwise-f0.5/v1"
+PROTOCOL = "channel-macro-corrected-eventwise-f0.5/v2"
 
 
 def union(intervals):
@@ -33,7 +33,7 @@ def prediction_interval(record, window):
     return P.closed(a, b) if a == b or b == window[1] else P.closedopen(a, b)
 
 
-def evaluate_eventwise(dataset, predictions, category_mode="both"):
+def evaluate_eventwise(dataset, predictions, category_mode=DEFAULT_CATEGORY):
     """Reference EW interval core. Public app aggregation is in evaluate()."""
     if category_mode not in CATEGORIES:
         raise DataError("事件类别选择无效")
@@ -109,7 +109,7 @@ SUM_FIELDS = ("event_count", "detected_count", "missed_count", "false_positive_c
               "nominal_seconds", "false_positive_seconds", "redundant_detections")
 
 
-def evaluate(dataset, predictions, category_mode="both"):
+def evaluate(dataset, predictions, category_mode=DEFAULT_CATEGORY):
     """Score each target channel independently, then macro-average defined rates.
 
     The same event ID on two channels represents two channel-event pairs.

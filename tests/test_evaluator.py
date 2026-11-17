@@ -72,7 +72,11 @@ def test_category_filter_and_excluded_preserved():
     dataset = synthetic([("a", 10, 20, "Anomaly"), ("rare", 40, 50, "Rare Event"),
                          ("gap", 60, 70, "Communication Gap"), ("invalid", 80, 90, "Invalid")])
     pred = predictions((12, 18), (42, 48), (62, 68), (82, 88))
-    both, anomaly = evaluate(dataset, pred), evaluate(dataset, pred, "anomaly")
+    both, anomaly = evaluate(dataset, pred, "both"), evaluate(dataset, pred, "anomaly")
+    all_categories = evaluate(dataset, pred)
+    assert all_categories["metrics"]["event_count"] == 3
+    assert all_categories["metrics"]["detected_count"] == 3
+    assert all_categories["config"]["selected_categories"] == ["Anomaly", "Rare Event", "Communication Gap"]
     assert both["metrics"]["event_count"] == 2
     assert anomaly["metrics"]["event_count"] == 1
     assert both["metrics"]["nominal_seconds"] == anomaly["metrics"]["nominal_seconds"] == 60

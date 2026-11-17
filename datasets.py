@@ -8,7 +8,9 @@ import yaml
 
 BASE = Path(__file__).resolve().parent
 MISSIONS = ("Mission1", "Mission2", "Mission3")
-CATEGORIES = {"both": ["Anomaly", "Rare Event"], "anomaly": ["Anomaly"]}
+DEFAULT_CATEGORY = "all"
+CATEGORIES = {"all": ["Anomaly", "Rare Event", "Communication Gap"],
+              "both": ["Anomaly", "Rare Event"], "anomaly": ["Anomaly"]}
 
 
 class DataError(ValueError):
@@ -78,9 +80,33 @@ def load_config(mission, source, version=None, config_dir=None, settings_file=No
     if version is not None and version != cfg["version"]:
         raise DataError("数据版本已变化，请重新加载当前 Mission 并校验")
     root = load_dataset_root(settings_file) if source == "real" else BASE
-    cfg.update(mission_id=mission, source=source, default_categories=config.get("default_categories", "both"))
+    cfg.update(mission_id=mission, source=source, default_categories=DEFAULT_CATEGORY)
     cfg["paths"] = {k: str((root / cfg[k]).resolve()) for k in ("labels", "channels", "anomaly_types") if cfg.get(k)}
     return cfg
+
+
+def load_target_channels(cfg):
+    """Explicit target list, Target flags, or a declared target-only channel table."""
+    if cfg.get("target_channels"):
+        channels = cfg["target_channels"]
+        if not isinstance(channels, list) or not all(isinstance(c, str) and c.strip() for c in channels):
+            raise DataError("target_channels 必须是非空通道名称列表")
+    else:
+        names, rows = read_csv(cfg["paths"]["channels"])
+        if "channel" not in names:
+            raise DataError("无法识别 channels.csv：需要 Channel 列")
+        if "target" in names:
+            if any(r["target"].lower() not in ("yes", "no", "true", "false", "1", "0") for r in rows):
+                raise DataError("channels.csv 中 Target 值无法识别，请明确配置 target_channels")
+            channels = [r["channel"] for r in rows if r["target"].lower() in ("yes", "true", "1")]
+        elif cfg.get("channels_are_targets") is True:
+            channels = [r["channel"] for r in rows]
+        else:
+            raise DataError("无法识别 channels.csv：需要 Target 列；目标通道专用表须配置 channels_are_targets=true，或明确填写 target_channels")
+    channels = list(dict.fromkeys(channels))
+    if not channels or any(not c for c in channels):
+        raise DataError("目标通道列表为空或无效，不能默认评测所有通道")
+    return channels
 
 
 def load_dataset(cfg, start=None, end=None, confirmed=False, require_range=True):
@@ -101,20 +127,7 @@ def load_dataset(cfg, start=None, end=None, confirmed=False, require_range=True)
             cfg.update(start=iso(window[0]), end=iso(window[1]))
         except (ValueError, OverflowError) as exc:
             raise DataError(f"评测窗口无效：{exc}") from exc
-    if cfg.get("target_channels"):
-        channels = cfg["target_channels"]
-        if not isinstance(channels, list) or not all(isinstance(c, str) and c.strip() for c in channels):
-            raise DataError("target_channels 必须是非空通道名称列表")
-    else:
-        names, rows = read_csv(cfg["paths"]["channels"])
-        if not {"channel", "target"}.issubset(names):
-            raise DataError("无法识别 channels.csv：需要 Channel 和 Target；也可在配置中明确填写 target_channels")
-        if any(r["target"].lower() not in ("yes", "no", "true", "false", "1", "0") for r in rows):
-            raise DataError("channels.csv 中 Target 值无法识别，请明确配置 target_channels")
-        channels = [r["channel"] for r in rows if r["target"].lower() in ("yes", "true", "1")]
-    channels = list(dict.fromkeys(channels))
-    if not channels or any(not c for c in channels):
-        raise DataError("目标通道列表为空或无效，不能默认评测所有通道")
+    channels = load_target_channels(cfg)
     names, rows = read_csv(cfg["paths"]["labels"])
     if not {"id", "channel", "starttime", "endtime"}.issubset(names):
         raise DataError("labels.csv 必须包含 ID,Channel,StartTime,EndTime")

@@ -39,6 +39,13 @@ def test_real_samples_match_supplied_labels_and_web_pipeline(client,mission):
     assert sum(r["matched_selected"] for r in result["predictions"]) == 8
     assert result["metrics"]["f0_5"] == checked["macro_f0_5"]
     assert result["submission"]["user_id"] == path.name
+    assert result["config"]["selected_categories"] == ["Anomaly", "Rare Event", "Communication Gap"]
+    if mission == "Mission1":
+        assert result["config"]["start"] == "2007-01-01T00:00:00Z"
+        assert result["navigation_range"][0] == "2000-01-01T00:00:00.969000Z"
+        assert len(result["channel_results"]) == 58
+        assert result["aggregation"]["valid_channel_counts"]["f0_5"] == 52
+        assert not any(e["category"] == "Communication Gap" for e in result["events"])
 
 
 @pytest.mark.parametrize("mission",MISSIONS)

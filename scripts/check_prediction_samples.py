@@ -7,7 +7,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import portion as P
 
-from datasets import BASE, CATEGORIES, MISSIONS, load_config, load_dataset
+from datasets import BASE, CATEGORIES, DEFAULT_CATEGORY, MISSIONS, load_config, load_dataset
 from evaluator import evaluate, prediction_interval
 from validation import parse_csv
 
@@ -16,7 +16,7 @@ def verify_sample(dataset, path, expected_ids=None):
     report = parse_csv(path.read_bytes(), path.name, dataset)
     assert not report["errors"], report["errors"]
     assert report["raw_count"] == 10 and report["duplicate_count"] == 0
-    result = evaluate(dataset, report["records"], "both")
+    result = evaluate(dataset, report["records"])
     matched = sum(row["matched_selected"] for row in result["predictions"])
     false = sum(row["false_positive"] for row in result["predictions"])
     ignored = sum(row["ignored_only"] for row in result["predictions"])
@@ -25,7 +25,7 @@ def verify_sample(dataset, path, expected_ids=None):
     for number,pred in enumerate(report["records"],1):
         interval = prediction_interval(pred,dataset["window"])
         ids = sorted({row["id"] for row in dataset["labels"] if row["channel"] == pred["channel"]
-            and row["category"] in CATEGORIES["both"] and not (P.closed(row["start"],row["end"]) & interval).empty})
+            and row["category"] in CATEGORIES[DEFAULT_CATEGORY] and not (P.closed(row["start"],row["end"]) & interval).empty})
         if expected_ids is not None:
             assert set(ids) == set(expected_ids[number-1]), (path.name,number,ids,expected_ids[number-1])
         assert bool(ids) == (number <= 8), (path.name,number,ids)

@@ -25,7 +25,7 @@ def run_checks(directory):
             ds = load_dataset(cfg, start="2000-01-01T00:00:00Z", end=end, confirmed=True)
             row = next(r for r in ds["labels"] if r["category"] == "Anomaly")
             csv = f"channel,starttime,endtime\n{row['channel']},{iso(row['start'])},{iso(row['end'])}\n".encode()
-            response = client.post("/", data=dict(mission=mission, source="real", version=cfg["version"], category="both",
+            response = client.post("/", data=dict(mission=mission, source="real", version=cfg["version"],
                 mode="csv", action="evaluate", range_start="2000-01-01T00:00:00Z", range_end=end,
                 confirm_range="yes", prediction_csv=(io.BytesIO(csv), "PIPELINE-SELF-CHECK.csv")))
             assert response.status_code == 200 and 'id="evaluation-result"' in response.get_data(as_text=True)
@@ -35,7 +35,7 @@ def run_checks(directory):
             assert len(result["channel_results"]) == len(ds["channels"])
             assert isclose(result["metrics"]["f0_5"], fmean(defined), abs_tol=1e-12)
             json_content = json.dumps([dict(channel=row["channel"], starttime=iso(row["start"]), endtime=iso(row["end"]))]).encode("utf-8")
-            json_response = client.post("/", data=dict(mission=mission, source="real", version=cfg["version"], category="both",
+            json_response = client.post("/", data=dict(mission=mission, source="real", version=cfg["version"],
                 mode="json", action="evaluate", range_start="2000-01-01T00:00:00Z", range_end=end,
                 confirm_range="yes", prediction_json=(io.BytesIO(json_content), "PIPELINE-SELF-CHECK.json")))
             assert json_response.status_code == 200

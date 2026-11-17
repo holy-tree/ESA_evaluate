@@ -18,6 +18,8 @@ body.workspace-layout{min-height:100dvh}
 .module-empty p{margin-bottom:15px}
 .workspace-status{flex:none;font-size:12px;padding:9px 20px;background:#eef4ff;color:#31577e;border-bottom:1px solid #dce7f7}
 .workspace-status.is-error{background:#fff3f3;color:#a73543}
+.fixed-categories{color:#4c6079;font-size:13px}
+.fixed-categories p{margin:8px 0 0;padding:10px 12px;background:#f7f9fd;border:1px solid var(--line);border-radius:7px;overflow-wrap:anywhere}
 #page-feedback:empty{display:none}
 #page-feedback .alert{margin:0;border-radius:0;border-width:0 0 1px}
 .workspace-main>footer{flex:none;padding:7px 0;font-size:10px}

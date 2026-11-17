@@ -14,7 +14,7 @@ import numpy as np
 import pandas as pd
 import portion as P
 
-from datasets import load_config, load_dataset, timestamp
+from datasets import CATEGORIES, load_config, load_dataset, timestamp
 from evaluator import evaluate
 
 COMMIT = "27ecde187aa631512cf38a4508474b01ebeb1eda"
@@ -51,6 +51,8 @@ def main():
         ("overlapping-inputs", [(12, 18), (15, 19), (12, 18)], "both"),
         ("discontinuous-gap", [(25, 28)], "both"),
         ("internal-point", [(30, 30)], "both"),
+        ("three-categories-gap-hit", [(12, 18), (42, 48), (62, 68)], "all"),
+        ("three-categories-gap-missed", [(12, 18), (42, 48)], "all"),
     ]
     for name, intervals, mode in cases:
         ds = load_dataset(load_config("Mission1", "demo"))
@@ -81,7 +83,7 @@ def main():
         truth = pd.DataFrame([[r["id"],r["start"],r["end"],r["category"]] for r in ds["labels"]],
                              columns=["ID", "StartTime", "EndTime", "Category"])
         metric = Official(betas=.5, full_range=(at(0), at(100)),
-                          select_labels={"Category": ["Anomaly", "Rare Event"] if mode == "both" else ["Anomaly"]})
+                          select_labels={"Category": CATEGORIES[mode]})
         if name == "internal-point":
             # Internal closed points are an interval-input extension: compare directly
             # to the unchanged upstream EW block, injecting its already-converted events.

@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from chart_data import build_view, display_cadence, prediction_checkpoints, smooth_buckets
+from chart_data import build_view, display_cadence, navigation_range, prediction_checkpoints, smooth_buckets
 from datasets import MISSIONS, load_config, load_dataset, timestamp
 from telemetry import TelemetryStore
 from test_app import exported, fields
@@ -141,6 +141,16 @@ def test_view_outside_evaluation_keeps_score_unchanged(client):
     assert any(e["id"] == "invalid" for c in chart["channels"] for e in c["events"])
     assert len(chart["checkpoints"]) == 1
     assert exported(client,response) == before
+
+
+def test_independent_full_history_is_not_replaced_by_score_window():
+    cfg = dict(start="2007-01-01T00:00:00Z", end="2013-12-31T23:59:59Z",
+               observation_start="2000-01-01T00:00:00Z", observation_end="2013-12-31T23:59:59Z")
+    assert navigation_range(cfg, (timestamp(cfg["start"]), timestamp(cfg["end"]))) == [cfg["observation_start"], cfg["observation_end"]]
+    invalid = dict(cfg, observation_end="1999-01-01")
+    from datasets import DataError
+    with pytest.raises(DataError, match="观测范围"):
+        navigation_range(invalid, None)
 
 
 def test_byte_bounded_cache_evicts_without_cross_mission_values(tmp_path, monkeypatch):

@@ -9,7 +9,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import pandas as pd
 
-from datasets import MISSIONS, DataError, iso, load_config, read_csv
+from datasets import MISSIONS, DataError, iso, load_config, load_target_channels
 
 
 def channel_bounds(path):
@@ -24,8 +24,7 @@ def channel_bounds(path):
 
 
 def scan(cfg):
-    _, rows = read_csv(cfg["paths"]["channels"])
-    channels = cfg.get("target_channels") or [r["channel"] for r in rows if r["target"].lower() in ("yes", "true", "1")]
+    channels = load_target_channels(cfg)
     if not channels:
         raise DataError("没有明确配置目标通道")
     folder = Path(cfg["paths"]["labels"]).parent / "channels"
@@ -50,8 +49,7 @@ def main():
     args = parser.parse_args()
     cfg = load_config(args.mission, "real")
     if args.inspect:
-        _, rows = read_csv(cfg["paths"]["channels"])
-        channel = next(r["channel"] for r in rows if r["target"].lower() in ("yes", "true", "1"))
+        channel = load_target_channels(cfg)[0]
         path = Path(cfg["paths"]["labels"]).parent / "channels" / f"{channel}.zip"
         with ZipFile(path) as archive:
             for entry in archive.infolist():

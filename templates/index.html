@@ -27,7 +27,7 @@
       <div class="section-heading"><h2><span>01</span> 评测协议</h2>{% if source == 'demo' %}<span class="badge demo">演示数据</span>{% endif %}</div>
       <div class="settings-grid evaluation-settings">
         <label>Mission<select id="mission" name="mission" class="context-select">{% for m in missions %}<option value="{{ m }}" {{ 'selected' if m == mission }}>{{ m }}{{ '：自定义评测' if m == 'Mission3' }}</option>{% endfor %}<option value="custom" disabled data-interface="{{ url_for('custom_dataset_interface') }}">自定义数据集（预留）</option></select></label>
-        <label>事件类别<select id="category" name="category" class="context-select"><option value="both" {{ 'selected' if category == 'both' }}>Anomaly + Rare Event</option><option value="anomaly" {{ 'selected' if category == 'anomaly' }}>Anomaly only</option></select></label>
+        <div class="fixed-categories"><span>评分事件类别</span><p>Anomaly + Rare Event + Communication Gap</p></div>
       </div>
       {% if cfg %}
       <input type="hidden" name="version" value="{{ cfg.version }}">

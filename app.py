@@ -14,8 +14,8 @@ from itsdangerous import BadData, URLSafeTimedSerializer
 from werkzeug.exceptions import RequestEntityTooLarge
 from werkzeug.utils import secure_filename
 
-from datasets import BASE, CATEGORIES, MISSIONS, DataError, load_config, load_dataset, read_csv, timestamp
-from evaluator import evaluate
+from datasets import BASE, CATEGORIES, DEFAULT_CATEGORY, MISSIONS, DataError, load_config, load_dataset, read_csv, timestamp
+from evaluator import PROTOCOL, evaluate
 from chart_data import build_view, navigation_range
 from telemetry import TelemetryStore
 from validation import parse_csv, parse_json, validate_records
@@ -51,13 +51,15 @@ def create_app(test_config=None):
         return load_config(mission, source, version, app.config["CONFIG_DIR"], app.config["SETTINGS_FILE"])
 
     def seal(kind, payload):
-        return signer.dumps(dict(kind=kind, payload=payload))
+        return signer.dumps(dict(kind=kind, protocol=PROTOCOL, payload=payload))
 
     def unseal(token, kind):
         try:
             value = signer.loads(token, max_age=app.config["TOKEN_MAX_AGE"])
             if value["kind"] != kind:
                 raise DataError("下载或预览数据类型不匹配")
+            if value.get("protocol") != PROTOCOL:
+                raise DataError("评分协议已变化，请刷新页面并重新校验、评测")
             return value["payload"]
         except (BadData, KeyError) as exc:
             raise DataError("预览或下载凭据已失效，请重新上传并评测（有效期 1 小时）") from exc
@@ -65,7 +67,7 @@ def create_app(test_config=None):
     def fingerprint(dataset, category):
         stamps = {k: (Path(v).stat().st_mtime_ns, Path(v).stat().st_size)
                   for k, v in dataset["config"]["paths"].items()}
-        return hashlib.sha256(json.dumps([dataset["config"], category, stamps], sort_keys=True).encode()).hexdigest()
+        return hashlib.sha256(json.dumps([dataset["config"], category, CATEGORIES[category], PROTOCOL, stamps], sort_keys=True).encode()).hexdigest()
 
     @app.template_filter("score")
     def score_filter(value):
@@ -75,7 +77,7 @@ def create_app(test_config=None):
     def index():
         values = request.form if request.method == "POST" else request.args
         mission, source = values.get("mission", "Mission1"), values.get("source", "real")
-        category, mode = values.get("category", "both"), values.get("mode", "csv")
+        category, mode = DEFAULT_CATEGORY, values.get("mode", "csv")
         view = dict(missions=MISSIONS, mission=mission, source=source, category=category, mode=mode,
                     cfg=None, dataset=None, error=None, report=None, result=None, result_token=None,
                     upload_token="", errors_token=None, rows=[], chart=None,
@@ -90,8 +92,8 @@ def create_app(test_config=None):
             view["rows"] = [dict(channel=c, starttime=starts[i] if i < len(starts) else "",
                                  endtime=ends[i] if i < len(ends) else "") for i, c in enumerate(channels)]
         try:
-            if category not in CATEGORIES or mode not in ("manual", "csv", "json"):
-                raise DataError("事件类别或输入模式无效")
+            if mode not in ("manual", "csv", "json"):
+                raise DataError("输入模式无效")
             if request.method == "POST" and not values.get("version"):
                 raise DataError("缺少数据版本，请重新加载页面")
             cfg = config_for(mission, source, values.get("version") if request.method == "POST" else None)
@@ -225,6 +227,8 @@ def create_app(test_config=None):
                 predictions = payload["input_predictions"]
             else:
                 scope = payload
+            if scope.get("category") != DEFAULT_CATEGORY:
+                raise DataError("评分类别已更新为固定三类，请刷新页面并重新评测")
             cfg = config_for(scope["mission"], scope["source"], scope["version"])
             kwargs = dict(start=scope["start"], end=scope["end"], confirmed=True) if scope["custom_range"] else {}
             ds = load_dataset(cfg, require_range=False, **kwargs)

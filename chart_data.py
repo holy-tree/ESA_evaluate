@@ -5,14 +5,18 @@ import numpy as np
 import pandas as pd
 import portion as P
 
-from datasets import CATEGORIES, DataError, iso, read_csv, timestamp
+from datasets import CATEGORIES, DEFAULT_CATEGORY, DataError, iso, read_csv, timestamp
 from telemetry import event_annotations, select_extrema, select_states
 
 MODES = {"auto", "raw", "aggregate", "moving", "kernel"}
 
 
 def navigation_range(cfg, fallback):
-    if cfg.get("start") and cfg.get("end"):
+    if cfg.get("observation_start") and cfg.get("observation_end"):
+        bounds = (timestamp(cfg["observation_start"]), timestamp(cfg["observation_end"]))
+        if bounds[0] >= bounds[1]:
+            raise DataError("数据集观测范围配置无效")
+    elif cfg.get("start") and cfg.get("end"):
         bounds = (timestamp(cfg["start"]), timestamp(cfg["end"]))
         if bounds[0] >= bounds[1]:
             raise DataError("数据集观测范围配置无效")
@@ -211,7 +215,7 @@ def channel_view(store, dataset, channel, a, b, predictions, category, mode, ban
 
 
 def build_view(store, dataset, channels, start, end, predictions=(), mode="auto", bandwidth=None,
-               pixel_width=1000, max_points=8000, category="both", include_checkpoints=False):
+                pixel_width=1000, max_points=8000, category=DEFAULT_CATEGORY, include_checkpoints=False):
     if not isinstance(channels, list) or not channels or any(not isinstance(c, str) or c not in dataset["channels"] for c in channels):
         raise DataError("请至少选择一个当前 Mission 的目标通道")
     channels = list(dict.fromkeys(channels))

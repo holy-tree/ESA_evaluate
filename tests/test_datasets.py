@@ -39,6 +39,20 @@ def test_missing_category_and_id_join(tmp_path):
         load_dataset(cfg)
 
 
+def test_target_only_channel_table_requires_explicit_declaration(tmp_path):
+    cfg = local_config(tmp_path)
+    Path(cfg["paths"]["channels"]).write_text("Channel,Group\nc,3\nno_labels,4\n", encoding="utf-8")
+    with pytest.raises(DataError, match="channels_are_targets"):
+        load_dataset(cfg)
+    cfg["channels_are_targets"] = True
+    ds = load_dataset(cfg)
+    assert ds["channels"] == ["c", "no_labels"]
+    assert len(ds["labels"]) == 1
+    # Target flags still take precedence for full metadata tables.
+    Path(cfg["paths"]["channels"]).write_text("Channel,Target\nc,YES\nno_labels,NO\n", encoding="utf-8")
+    assert load_dataset(cfg)["channels"] == ["c"]
+
+
 def test_custom_range_requires_confirmation(tmp_path):
     cfg = local_config(tmp_path)
     with pytest.raises(DataError, match="确认"):

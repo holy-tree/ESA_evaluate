@@ -11,7 +11,7 @@ from datasets import BASE, MISSIONS, DataError, iso, load_config, load_dataset, 
 
 
 def fields(mission="Mission1", mode="csv"):
-    return dict(mission=mission, source="demo", version="demo-1.0", category="both", mode=mode, action="evaluate", user_id="test-user")
+    return dict(mission=mission, source="demo", version="demo-1.0", mode=mode, action="evaluate", user_id="test-user")
 
 
 def extract_token(response, action):
@@ -86,7 +86,7 @@ def test_mission_sequence_and_same_ids_channels(client):
     assert results[1]["config"]["start"] != results[2]["config"]["start"]
 
 
-@pytest.mark.parametrize("change", [dict(mission="Mission2"), dict(category="anomaly"),
+@pytest.mark.parametrize("change", [dict(mission="Mission2"),
                                     dict(range_start="2024-01-01T00:00:00Z", range_end="2024-01-01T00:01:30Z", confirm_range="yes")])
 def test_stale_preview_rejected(client, change):
     preview = post_csv(client, action="preview")
@@ -96,6 +96,37 @@ def test_stale_preview_rejected(client, change):
     response = client.post("/", data=data)
     assert "旧预览失效" in response.get_data(as_text=True)
     assert 'id="evaluation-result"' not in response.get_data(as_text=True)
+
+
+@pytest.mark.parametrize("supplied_category", [None, "both", "anomaly", "unknown"])
+def test_web_always_scores_three_categories_without_a_selector(client, supplied_category):
+    page = client.get("/?mission=Mission3&source=demo&category=anomaly").get_data(as_text=True)
+    assert '<select id="category"' not in page
+    assert 'name="category"' not in page
+    assert "Anomaly + Rare Event + Communication Gap" in page
+    data = dict(fields("Mission3", "manual"), channel="channel_1",
+                starttime="2024-03-01T00:01:02Z", endtime="2024-03-01T00:01:08Z")
+    if supplied_category is not None:
+        data["category"] = supplied_category
+    response = client.post("/", data=data)
+    result = exported(client, response)
+    assert result["config"]["category_mode"] == "all"
+    assert result["config"]["selected_categories"] == ["Anomaly", "Rare Event", "Communication Gap"]
+    assert result["metrics"]["event_count"] == 4
+    assert result["metrics"]["detected_count"] == 1
+    assert next(e for e in result["events"] if e["id"] == "gap")["detected"]
+    from test_telemetry import request_series
+    chart = request_series(client, response, "channel_1", "2024-03-01", scored=True).get_json()
+    assert next(e for e in chart["events"] if e["id"] == "gap")["selected"]
+
+
+def test_previous_protocol_signed_results_expire(client):
+    from itsdangerous import URLSafeTimedSerializer
+    signer = URLSafeTimedSerializer(client.application.config["SECRET_KEY"], salt="esa-evaluation-v1")
+    token = signer.dumps(dict(kind="result", protocol="channel-macro-corrected-eventwise-f0.5/v1", payload={}))
+    response = client.post("/download/json", data=dict(token=token))
+    assert response.status_code == 400
+    assert "评分协议已变化" in response.get_data(as_text=True)
 
 
 def test_all_records_not_preview_only(client):
@@ -199,7 +230,7 @@ def test_yaml_root_drives_real_upload_and_root_change_invalidates_preview(tmp_pa
     settings = tmp_path / "settings.yaml"
     settings.write_text(f"dataset_root: '{(tmp_path / 'first').as_posix()}'\n", encoding="utf-8")
     client = create_app(dict(TESTING=True, SETTINGS_FILE=settings, LEADERBOARD_DIR=tmp_path / "submissions")).test_client()
-    data = dict(fields(mission), source="real", version="local-unversioned",
+    data = dict(fields(mission), source="real", version=load_config(mission,"real")["version"],
                 range_start="2024-01-01T00:00:00Z", range_end="2024-01-01T00:01:40Z", confirm_range="yes")
     content = b"channel,starttime,endtime\nconfigured_channel,2024-01-01T00:00:12Z,2024-01-01T00:00:18Z\n"
     scored = client.post("/", data=dict(data, prediction_csv=(io.BytesIO(content), "predictions.csv")))

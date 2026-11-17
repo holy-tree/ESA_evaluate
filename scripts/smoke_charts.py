@@ -35,7 +35,7 @@ def run_checks(directory):
         else:
             ds = load_dataset(cfg)
         label = next(row for row in ds["labels"] if row["category"] == "Anomaly")
-        fields = dict(mission=mission, source="real", version=cfg["version"], category="both", mode="manual", action="evaluate",
+        fields = dict(mission=mission, source="real", version=cfg["version"], mode="manual", action="evaluate",
             channel=label["channel"], starttime=iso(label["start"]), endtime=iso(label["end"]), user_id="PIPELINE-SELF-CHECK")
         if mission == "Mission3":
             fields.update(range_start=ds["config"]["start"], range_end=ds["config"]["end"], confirm_range="yes")

@@ -1,17 +1,17 @@
 {
   "description": "Predictions constructed from local ESA labels for pipeline testing, not model performance. Record numbers exclude the CSV header.",
-  "category_mode": "both",
+  "category_mode": "all",
   "expected_records": 10,
   "expected_matched_predictions": 8,
   "expected_false_positive_intervals": 2,
   "missions": {
     "Mission1": {
       "file": "PIPELINE-CHECK-Mission1.csv",
-      "version": "local-unversioned",
-      "start": "2000-01-01T00:00:00.969000Z",
+      "version": "local-filtered-2007-v1",
+      "start": "2007-01-01T00:00:00Z",
       "end": "2013-12-31T23:59:59.937000Z",
       "channels": ["channel_14", "channel_21", "channel_37", "channel_74", "channel_75"],
-      "expected_event_ids_by_record": [["id_151"], ["id_151"], ["id_144"], ["id_158"], ["id_30"], ["id_30"], ["id_163"], ["id_185"], [], []]
+      "expected_event_ids_by_record": [["id_117"], ["id_189"], ["id_117"], ["id_115"], ["id_116"], ["id_26"], ["id_116"], ["id_26"], [], []]
     },
     "Mission2": {
       "file": "PIPELINE-CHECK-Mission2.csv",
