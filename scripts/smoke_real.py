@@ -13,6 +13,15 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app import create_app
 from datasets import MISSIONS, DataError, iso, load_config, load_dataset
+from itsdangerous import URLSafeTimedSerializer
+
+
+def result_snapshot(client, response):
+    token = html.unescape(re.search(r'action="/download/csv"[^>]*>\s*<input[^>]*value="([^"]+)"', response.get_data(as_text=True))[1])
+    download = client.post("/download/csv", data=dict(token=token))
+    assert download.status_code == 200 and download.data.startswith(b"\xef\xbb\xbf")
+    signer = URLSafeTimedSerializer(client.application.config["SECRET_KEY"], salt="esa-evaluation-v1")
+    return signer.loads(token)["payload"]
 
 
 def run_checks(directory):
@@ -29,8 +38,7 @@ def run_checks(directory):
                 mode="csv", action="evaluate", range_start="2000-01-01T00:00:00Z", range_end=end,
                 confirm_range="yes", prediction_csv=(io.BytesIO(csv), "PIPELINE-SELF-CHECK.csv")))
             assert response.status_code == 200 and 'id="evaluation-result"' in response.get_data(as_text=True)
-            token = re.search(r'action="/download/json"[^>]*>\s*<input[^>]*value="([^"]+)"', response.get_data(as_text=True))[1]
-            result = client.post("/download/json", data=dict(token=html.unescape(token))).get_json()
+            result = result_snapshot(client, response)
             defined = [r["metrics"]["f0_5"] for r in result["channel_results"] if r["metrics"]["f0_5"] is not None]
             assert len(result["channel_results"]) == len(ds["channels"])
             assert isclose(result["metrics"]["f0_5"], fmean(defined), abs_tol=1e-12)
@@ -39,8 +47,7 @@ def run_checks(directory):
                 mode="json", action="evaluate", range_start="2000-01-01T00:00:00Z", range_end=end,
                 confirm_range="yes", prediction_json=(io.BytesIO(json_content), "PIPELINE-SELF-CHECK.json")))
             assert json_response.status_code == 200
-            json_token = re.search(r'action="/download/json"[^>]*>\s*<input[^>]*value="([^"]+)"', json_response.get_data(as_text=True))[1]
-            json_result = client.post("/download/json", data=dict(token=html.unescape(json_token))).get_json()
+            json_result = result_snapshot(client, json_response)
             assert json_result["metrics"] == result["metrics"]
             assert json_result["channel_results"] == result["channel_results"]
             summaries.append(dict(mission=mission, status="PASS", target_channels=len(ds["channels"]),

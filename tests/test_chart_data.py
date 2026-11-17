@@ -132,7 +132,7 @@ def test_view_outside_evaluation_keeps_score_unchanged(client):
         range_start="2024-03-01T00:00:10Z", range_end="2024-03-01T00:00:50Z", confirm_range="yes"))
     before = exported(client, response)
     from test_app import extract_token
-    chart = client.post("/api/series", json=dict(kind="result", token=extract_token(response,"json"), channels=["channel_1", "channel_4"],
+    chart = client.post("/api/series", json=dict(kind="result", token=extract_token(response,"csv"), channels=["channel_1", "channel_4"],
         view_start="2024-03-01T00:00:00Z", view_end="2024-03-01T00:01:40Z", display_mode="aggregate", include_checkpoints=True))
     assert chart.status_code == 200, chart.get_json()
     chart = chart.get_json()

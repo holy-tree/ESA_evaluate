@@ -20,6 +20,7 @@ from chart_data import build_view, navigation_range
 from telemetry import TelemetryStore
 from validation import parse_csv, parse_json, validate_records
 from leaderboard import IdentityError, LeaderboardError, LeaderboardStore, resolve_identity, upload_basename
+from exports import result_csv_rows
 
 
 def create_app(test_config=None):
@@ -304,24 +305,13 @@ def create_app(test_config=None):
                 errors = unseal(request.form.get("token", ""), "errors")
                 return csv_response("validation-errors.csv", ["line_or_record", "message"],
                                     [[e["line"], e["message"]] for e in errors])
+            if kind != "csv":
+                raise DataError("评测结果统一使用 CSV 导出")
             result = unseal(request.form.get("token", ""), "result")
             cfg = result["config"]
             filename = f"{cfg['mission_id']}-{cfg['version']}-{cfg['source']}"
-            if kind == "json":
-                return Response(json.dumps(result, ensure_ascii=False, indent=2, allow_nan=False),
-                                mimetype="application/json", headers={"Content-Disposition": f'attachment; filename="{secure_filename(filename)}.json"'})
-            if kind == "events":
-                return csv_response(filename + "-events.csv", ["mission", "version", "source", "channel", "ID", "Category", "detected", "intervals"],
-                                    [[cfg["mission_id"], cfg["version"], cfg["source"], e.get("channel", ";".join(e["channels"])), e["id"], e["category"],
-                                      e["detected"], json.dumps(e["intervals"])] for e in result["events"]])
-            if kind == "channels":
-                if "channel_results" not in result:
-                    raise DataError("评分协议已更新，请重新评测后导出逐通道结果")
-                fields = ["f0_5", "p_event", "tnr", "p_corrected", "recall", "event_count", "detected_count", "missed_count", "false_positive_count", "nominal_seconds", "false_positive_seconds"]
-                return csv_response(filename + "-channels.csv", ["mission", "version", "source", "channel", "status", *fields, "reasons"],
-                    [[cfg["mission_id"], cfg["version"], cfg["source"], row["channel"], row["status"],
-                      *[row["metrics"][key] for key in fields], "; ".join(row["reasons"])] for row in result["channel_results"]])
-            raise DataError("下载格式无效")
+            rows = result_csv_rows(result)
+            return csv_response(filename + "-results.csv", rows[0], rows[1:])
         except DataError as exc:
             return render_template("error.html", message=str(exc)), 400
 

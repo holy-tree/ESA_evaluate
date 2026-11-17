@@ -53,6 +53,19 @@ def test_target_only_channel_table_requires_explicit_declaration(tmp_path):
     assert load_dataset(cfg)["channels"] == ["c"]
 
 
+def test_explicit_exclusions_apply_to_target_table_and_explicit_list(tmp_path):
+    cfg = local_config(tmp_path)
+    cfg["target_channels"] = ["c", "channel_47", "channel_48"]
+    cfg["excluded_channels"] = ["channel_47", "channel_48"]
+    assert load_dataset(cfg)["channels"] == ["c"]
+    cfg["excluded_channels"].append("c")
+    with pytest.raises(DataError, match="目标通道列表为空"):
+        load_dataset(cfg)
+    cfg["excluded_channels"] = "channel_47"
+    with pytest.raises(DataError, match="excluded_channels"):
+        load_dataset(cfg)
+
+
 def test_custom_range_requires_confirmation(tmp_path):
     cfg = local_config(tmp_path)
     with pytest.raises(DataError, match="确认"):

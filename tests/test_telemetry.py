@@ -8,7 +8,7 @@ import pytest
 from app import create_app
 from datasets import BASE, MISSIONS, DataError, load_config, load_dataset, timestamp
 from telemetry import TelemetryStore, display_window, select_extrema, select_states
-from test_app import extract_token, fields, post_csv
+from test_app import exported, extract_token, fields, post_csv
 
 
 def page_data(response):
@@ -17,7 +17,7 @@ def page_data(response):
 
 
 def request_series(client, response, channel, date, scale="day", scored=False):
-    token = extract_token(response, "json") if scored else page_data(response)["chart"]["token"]
+    token = extract_token(response, "csv") if scored else page_data(response)["chart"]["token"]
     return client.post("/api/series", json=dict(kind="result" if scored else "chart", token=token,
                                                channel=channel, date=date, scale=scale))
 
@@ -58,7 +58,7 @@ def test_three_mission_raw_curves_and_scored_channel_specific_shading(client, mi
     else:
         assert chart["kind"] == "numeric"
     # Viewing a curve does not change the signed score snapshot.
-    original = client.post("/download/json", data=dict(token=extract_token(scored, "json"))).get_json()
+    original = exported(client, scored)
     assert original["config"]["target_channels"] == ds["channels"]
     assert original["config"]["start"] == cfg["start"]
 
@@ -216,6 +216,16 @@ def test_event_colors_use_full_mission_catalogue_across_channels(demo):
     first = store.window(ds, "channel_1", "2024-01-01", "day")
     second = store.window(ds, "channel_2", "2024-01-01", "day")
     assert next(e for e in first["events"] if e["id"] == "id_1")["color"] == next(e for e in second["events"] if e["id"] == "id_1")["color"]
+
+
+def test_event_ids_share_fixed_category_colors(demo):
+    ds = demo("Mission3")
+    store = TelemetryStore()
+    events = [event for channel in ds["channels"]
+              for event in store.window(ds, channel, "2024-03-01", "day")["events"]]
+    assert {e["color"] for e in events if e["category"] == "Anomaly"} == {"#dc3545"}
+    assert len({e["id"] for e in events if e["category"] == "Anomaly"}) == 2
+    assert {e["color"] for e in events if e["category"] in ("Rare Event", "Communication Gap")} == {"#d4a106"}
 
 
 def test_point_detection_and_true_point_keep_zero_duration(demo):

@@ -1,6 +1,5 @@
 """Windowed raw-telemetry visualization, separate from label-only scoring."""
 from collections import OrderedDict, defaultdict
-import hashlib
 from pathlib import Path
 from pickle import UnpicklingError
 from threading import Lock
@@ -70,12 +69,9 @@ def select_states(values, max_points, breaks):
 def event_annotations(dataset, channel, a, b, support, sample_times, category_mode):
     """True-label identities, not prediction rows; preserve disjoint fragments."""
     labels = dataset.get("labels", [])
-    ids = sorted(set(dataset.get("event_ids", [])) | {row["id"] for row in labels})
     cfg = dataset["config"]
     namespace = f"{cfg['mission_id']}|{cfg['version']}|{cfg['source']}"
-    base = int(hashlib.sha256(namespace.encode()).hexdigest()[:8], 16) % 360
-    colors = {event_id: f"hsl({(base + index * 137.507764) % 360:.3f}, 78%, 32%)"
-              for index, event_id in enumerate(ids)}
+    colors = {"Anomaly": "#dc3545", "Rare Event": "#d4a106", "Communication Gap": "#d4a106"}
     groups = defaultdict(list)
     for row in labels:
         if row["channel"] == channel:
@@ -97,7 +93,7 @@ def event_annotations(dataset, channel, a, b, support, sample_times, category_mo
             right = np.searchsorted(sample_times, interval.upper, side="right")
             for position in range(left, right):
                 memberships[position].append(event_id)
-        catalogue.append(dict(id=event_id, key=f"{namespace}|{event_id}", color=colors[event_id],
+        catalogue.append(dict(id=event_id, key=f"{namespace}|{event_id}", color=colors.get(rows[0]["category"], "#64748b"),
             event_start=iso(min(row["start"] for row in rows)),
             label_intervals=[dict(start_time=iso(pd.Timestamp(i.lower, tz="UTC")),
                                   end_time=iso(pd.Timestamp(i.upper, tz="UTC"))) for i in truth],

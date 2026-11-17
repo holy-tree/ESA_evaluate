@@ -104,6 +104,10 @@ def load_target_channels(cfg):
         else:
             raise DataError("无法识别 channels.csv：需要 Target 列；目标通道专用表须配置 channels_are_targets=true，或明确填写 target_channels")
     channels = list(dict.fromkeys(channels))
+    excluded = cfg.get("excluded_channels", [])
+    if not isinstance(excluded, list) or not all(isinstance(c, str) and c.strip() for c in excluded):
+        raise DataError("excluded_channels 必须是通道名称列表")
+    channels = [c for c in channels if c not in excluded]
     if not channels or any(not c for c in channels):
         raise DataError("目标通道列表为空或无效，不能默认评测所有通道")
     return channels
@@ -178,7 +182,7 @@ def load_dataset(cfg, start=None, end=None, confirmed=False, require_range=True)
     cfg["target_channels"] = channels
     cfg["label_warnings"] = label_warnings
     cfg["label_errors"] = label_errors
-    # Keep the full Mission event catalogue for stable chart colors across
-    # channel/date/category filters. It is not a list of scoreable events.
+    # Keep the full Mission event catalogue for metadata across channel/date
+    # filters. It is not a list of scoreable events; chart colors follow category.
     return dict(config=cfg, channels=channels, window=window, labels=labels,
                 event_ids=sorted(categories_by_id))

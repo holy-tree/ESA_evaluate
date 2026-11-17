@@ -43,7 +43,8 @@ def test_real_samples_match_supplied_labels_and_web_pipeline(client,mission):
     if mission == "Mission1":
         assert result["config"]["start"] == "2007-01-01T00:00:00Z"
         assert result["navigation_range"][0] == "2000-01-01T00:00:00.969000Z"
-        assert len(result["channel_results"]) == 58
+        assert len(result["channel_results"]) == 52
+        assert all(row["channel"] not in {f"channel_{i}" for i in range(47,53)} for row in result["channel_results"])
         assert result["aggregation"]["valid_channel_counts"]["f0_5"] == 52
         assert not any(e["category"] == "Communication Gap" for e in result["events"])
 

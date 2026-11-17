@@ -66,6 +66,6 @@ def test_channel_details_are_nested_with_their_own_summary_and_raw_sort_values(c
     assert 'id="channel-search"' in text and 'id="channel-filter-panel"' in text
 
 
-def test_hidden_columns_remain_available_in_complete_export(client):
+def test_internal_snapshot_keeps_complete_metrics_for_detail_views(client):
     result=exported(client,post_csv(client))
     assert all("event_count" in c["metrics"] and "status" in c and "reasons" in c for c in result["channel_results"])

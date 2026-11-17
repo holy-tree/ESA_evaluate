@@ -37,7 +37,8 @@
     const a = Math.max(domain[0], Math.min(domain[1]-span, start));
     return [a, a+span];
   }
-  let view = clamp(Math.max(domain[0], Date.parse(`${page.chart.date}T00:00:00Z`)), Math.max(domain[0], Date.parse(`${page.chart.date}T00:00:00Z`))+366*DAY);
+  const defaultView = clamp(Date.parse(page.chart.start), Date.parse(page.chart.end));
+  let view = [...defaultView];
   function iso(ms) { return new Date(ms).toISOString(); }
   function hideHover() {
     if (hover) hover.group.setAttribute('visibility', 'hidden');
@@ -285,8 +286,10 @@
     svg.setAttribute('width',width); svg.style.width=`${width}px`; svg.setAttribute('height',height); svg.setAttribute('viewBox',`0 0 ${width} ${height}`);
     plot={left,right,lanes,x:t=>left+(t-view[0])/(view[1]-view[0])*(right-left),inverse:x=>view[0]+(x-left)/(right-left)*(view[1]-view[0])};
     const defs=node('defs'); svg.append(defs);
-    const hatch=node('pattern',{id:'anomaly-hatch',patternUnits:'userSpaceOnUse',width:8,height:8,patternTransform:'rotate(45)'});
-    hatch.append(node('path',{d:'M0 0V8',class:'anomaly-hatch-line'}));defs.append(hatch);
+    for(const type of ['anomaly','rare-gap']){
+      const hatch=node('pattern',{id:`${type}-hatch`,patternUnits:'userSpaceOnUse',width:8,height:8,patternTransform:'rotate(45)'});
+      hatch.append(node('path',{d:type==='anomaly'?'M0 0V8':'M4 0V8',class:`${type}-hatch-line`}));defs.append(hatch);
+    }
     const grid=node('g',{class:'chart-grid'}); const axisTicks=ticks(...view); let prior=-Infinity;
     for (const t of axisTicks.values) {
       const px=plot.x(t.time); grid.append(node('line',{x1:px,x2:px,y1:32,y2:height-37}));
@@ -309,14 +312,16 @@
         if(plot.x(b)-plot.x(a)>130) background.append(node('text',{x:plot.x(a)+6,y:lane.top+18,class:'outside-label'},'本次评分范围外'));
       }
       for(const [a,b] of unionDetections(lane.channels)) bandRect(background,a,b,lane.top,lane.height,{class:`detection-shadow${a===b ? ' point-detection' : ''}`,'data-start':iso(a),'data-end':iso(b)});
-      const anomalies=lane.channels.flatMap(c=>c.events.filter(e=>e.category==='Anomaly')
-        .flatMap(e=>(e.label_intervals||e.intervals).map(i=>[Date.parse(i.start_time),Date.parse(i.end_time)])));
-      // Fill the union once; retain actual label endpoints, not viewport or sample-gap edges.
-      for(const [a,b] of unionIntervals(anomalies))bandRect(background,a,b,lane.top,lane.height,{class:'anomaly-region',fill:'url(#anomaly-hatch)','data-start':iso(a),'data-end':iso(b)});
-      const boundaryLayer=node('g',{'clip-path':`url(#${clipId})`,'data-lane':laneIndex});
-      for(const time of new Set(anomalies.flat()))if(time>=view[0]&&time<=view[1])boundaryLayer.append(node('line',{
-        x1:plot.x(time),x2:plot.x(time),y1:lane.top,y2:lane.bottom,class:'anomaly-boundary','data-time':iso(time)}));
-      boundaries.append(boundaryLayer);
+      for(const [type,categories] of [['anomaly',['Anomaly']],['rare-gap',['Rare Event','Communication Gap']]]){
+        const intervals=lane.channels.flatMap(c=>c.events.filter(e=>categories.includes(e.category))
+          .flatMap(e=>(e.label_intervals||e.intervals).map(i=>[Date.parse(i.start_time),Date.parse(i.end_time)])));
+        // Fill each category union once; only real label endpoints get boundary lines.
+        for(const [a,b] of unionIntervals(intervals))bandRect(background,a,b,lane.top,lane.height,{class:`${type}-region`,fill:`url(#${type}-hatch)`,'data-start':iso(a),'data-end':iso(b)});
+        const boundaryLayer=node('g',{'clip-path':`url(#${clipId})`,'data-lane':laneIndex});
+        for(const time of new Set(intervals.flat()))if(time>=view[0]&&time<=view[1])boundaryLayer.append(node('line',{
+          x1:plot.x(time),x2:plot.x(time),y1:lane.top,y2:lane.bottom,class:`${type}-boundary`,'data-time':iso(time)}));
+        boundaries.append(boundaryLayer);
+      }
       svg.append(background);
       lane.channels.forEach(c=>{
         const group=node('g',{class:'series-layer','data-channel':c.channel,'clip-path':`url(#${clipId})`}); waveNodes.set(c.channel,group);
@@ -349,7 +354,7 @@
     svg.prepend(grid); svg.append(waves,boundaries);
     if(checkpointIndex>=0 && checkpoints[checkpointIndex]){
       const p=checkpoints[checkpointIndex],g=node('g',{class:'checkpoint-highlight','pointer-events':'none'});
-      bandRect(g,Date.parse(p.start),Date.parse(p.end),32,height-69,{fill:'none',stroke:'#347eaf','stroke-width':2,'stroke-dasharray':'5 4'});svg.append(g);
+      bandRect(g,Date.parse(p.start),Date.parse(p.end),32,height-69,{fill:'none',stroke:'#16934a','stroke-width':2,'stroke-dasharray':'5 4'});svg.append(g);
     }
     lanes.forEach(l=>svg.append(node('rect',{x:left,y:l.top,width:right-left,height:l.height,class:'chart-hit-area'})));
     const hoverGroup=node('g',{class:'chart-hover',visibility:'hidden','pointer-events':'none'});
@@ -398,7 +403,7 @@
   async function load() {
     if(stale || !isActive())return;clearTimeout(timer);if(controller)controller.abort();controller=new AbortController();const requestId=++serial;
     const range=[...view], names=[...selected];if(!names.length)return;
-    const resultToken=document.querySelector('form[action="/download/json"] input[name=token]');
+    const resultToken=document.querySelector('#result-token');
     loading=true;lastWidth=Math.max(900,scroll.clientWidth-2);
     error.hidden=true;status.textContent=`正在读取 ${names.length} 个通道并计算显示数据… 首次加载真实通道可能需要数秒。`;
     try{
@@ -500,6 +505,12 @@
   [layout,$('chart-extrema'),$('chart-event-colors')].forEach(e=>e.addEventListener('change',()=>renderSoon()));
   $('chart-pred-next').addEventListener('click',()=>jump(1));$('chart-pred-previous').addEventListener('click',()=>jump(-1));$('chart-pred-focus').addEventListener('click',focusCheckpoint);
   $('chart-back').addEventListener('click',()=>{const old=history.pop();if(old){checkpointIndex=old.checkpoint;setView(old.start,old.end,{keepCheckpoint:true,delay:0});checkpointText();}});
+  $('chart-default').addEventListener('click',()=>{
+    if(view[0]!==defaultView[0]||view[1]!==defaultView[1])remember();
+    activeEvent=null;hoveredEvent=null;focusedEvent=null;hoveredChannel=null;
+    document.querySelectorAll('.event-legend-item').forEach(button=>button.setAttribute('aria-pressed','false'));
+    setView(...defaultView,{delay:0});applyHighlights();
+  });
   document.addEventListener('keydown',event=>{if(stale || !isActive() || event.ctrlKey || event.metaKey || event.altKey || event.target.matches('input,textarea,select,[contenteditable=true]'))return;if(event.key.toLowerCase()==='j'){event.preventDefault();jump(1);}if(event.key.toLowerCase()==='k'){event.preventDefault();jump(-1);}},{signal:lifecycle.signal});
   scroll.addEventListener('scroll',hideHover);window.addEventListener('blur',hideHover,{signal:lifecycle.signal});
   let resizeTimer;window.addEventListener('resize',()=>{if(!isActive())return;clearTimeout(resizeTimer);resizeTimer=setTimeout(()=>{renderSoon();schedule(0);},200);},{signal:lifecycle.signal});

@@ -119,8 +119,8 @@ def test_three_mission_json_preview_score_export_and_csv_equivalence(client, mis
     assert 'id="evaluation-result"' not in preview.get_data(as_text=True)
     scored = client.post("/", data=dict(fields(mission,"json"),upload_token=upload_token(preview)))
     assert exported(client,scored)["metrics"] == result["metrics"]
-    events = client.post("/download/events",data=dict(token=extract_token(response,"events")))
-    assert events.status_code == 200 and mission in events.get_data(as_text=True)
+    report = client.post("/download/csv",data=dict(token=extract_token(response,"csv")))
+    assert report.status_code == 200 and mission in report.get_data(as_text=True)
     for kind in ("template", "predictions"):
         example = client.get(f"/demo/{mission}/{kind}.json")
         assert example.status_code == 200 and "DEMO-" in example.headers["Content-Disposition"]

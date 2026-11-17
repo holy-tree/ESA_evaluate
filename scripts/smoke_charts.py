@@ -40,7 +40,7 @@ def run_checks(directory):
         if mission == "Mission3":
             fields.update(range_start=ds["config"]["start"], range_end=ds["config"]["end"], confirm_range="yes")
         scored = client.post("/", data=fields)
-        token = re.search(r'action="/download/json"[^>]*>\s*<input[^>]*value="([^"]+)"', scored.get_data(as_text=True))[1]
+        token = re.search(r'action="/download/csv"[^>]*>\s*<input[^>]*value="([^"]+)"', scored.get_data(as_text=True))[1]
         response = client.post("/api/series", json=dict(kind="result", token=html.unescape(token), channel=label["channel"],
             date=iso(label["start"])[:10], scale="day"))
         chart = response.get_json()

@@ -12,11 +12,12 @@
       "protocol": "演示数据；100 秒自定义窗口，非真实 ESA 模型性能。"
     },
     "real": {
-      "version": "local-filtered-2007-v1",
+      "version": "local-filtered-2007-v2",
       "labels": "ESA-Mission1/labels.csv",
       "anomaly_types": "ESA-Mission1/anomaly_types.csv",
       "channels": "ESA-Mission1/channels.csv",
       "channels_are_targets": true,
+      "excluded_channels": ["channel_47", "channel_48", "channel_49", "channel_50", "channel_51", "channel_52"],
       "start": "2007-01-01T00:00:00Z",
       "end": "2013-12-31T23:59:59.937000Z",
       "observation_start": "2000-01-01T00:00:00.969000Z",
@@ -28,7 +29,7 @@
         "latest_channel_start": "2000-01-01T00:06:45.177000Z",
         "earliest_channel_end": "2013-12-31T23:57:38.481000Z"
       },
-      "protocol": "本地筛选标签版本；默认评分窗口为 2007 年至 2013 年末，图表保留 2000 年至 2013 年原始观测范围。新 channels.csv 全部 58 行均为目标通道；其中 channel_47 至 channel_52 没有当前标签，未定义指标按通道排除。固定同时评测 Anomaly、Rare Event、Communication Gap；类别表定义但 labels.csv 未提供区间的事件不生成虚构标签。"
+      "protocol": "本地筛选标签版本；默认评分窗口为 2007 年至 2013 年末，图表保留 2000 年至 2013 年原始观测范围。通道表中明确排除 channel_47 至 channel_52，实际评分和曲线选择使用其余 52 个通道。固定同时评测 Anomaly、Rare Event、Communication Gap；类别表定义但 labels.csv 未提供区间的事件不生成虚构标签。"
     }
   }
 }

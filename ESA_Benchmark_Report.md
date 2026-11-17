@@ -2,7 +2,7 @@
 
 ESA-ADB 基于真实航天器遥测及历史标注，评价异常发现、误报控制、通道定位和报警时机。以下为本地三个 Mission 的**全文件历史统计**，不等同于某个训练／测试窗口。
 
-**当前评测版本说明：**下文数值为替换 Mission1 CSV 前的完整数据历史统计。当前 Mission1 使用 `local-filtered-2007-v1`：新标签为 1,452 行、91 个事件（55 Anomaly、36 Rare Event），默认评分窗口为 2007–2013 年，目标通道仍为 58 个；类别表保留 Communication Gap 定义，但新标签无对应区间。系统现固定同时评测 Anomaly、Rare Event、Communication Gap，采用通道宏平均 v2；历史统计不作为该筛选版本的当前事件数量。
+**当前评测版本说明：**下文数值为替换 Mission1 CSV 前的完整数据历史统计。当前 Mission1 使用 `local-filtered-2007-v2`：新标签为 1,452 行、91 个事件（55 Anomaly、36 Rare Event），默认评分窗口为 2007–2013 年，排除 channel_47～channel_52 后实际评测 52 个通道；类别表保留 Communication Gap 定义，但新标签无对应区间。系统现固定同时评测 Anomaly、Rare Event、Communication Gap，采用通道宏平均 v2；历史统计不作为该筛选版本的当前事件数量。
 
 ## 统计口径
 

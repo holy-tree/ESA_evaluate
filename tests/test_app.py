@@ -8,6 +8,7 @@ import pytest
 
 from app import create_app
 from datasets import BASE, MISSIONS, DataError, iso, load_config, load_dataset, read_csv
+from itsdangerous import URLSafeTimedSerializer
 
 
 def fields(mission="Mission1", mode="csv"):
@@ -22,10 +23,20 @@ def extract_token(response, action):
 
 
 def exported(client, response):
-    token = extract_token(response, "json")
-    response = client.post("/download/json", data={"token": token})
-    assert response.status_code == 200
-    return response.get_json()
+    """Inspect the signed server snapshot without adding a JSON download endpoint."""
+    token = extract_token(response, "csv")
+    signer = URLSafeTimedSerializer(client.application.config["SECRET_KEY"], salt="esa-evaluation-v1")
+    envelope = signer.loads(token, max_age=client.application.config["TOKEN_MAX_AGE"])
+    assert envelope["kind"] == "result"
+    return envelope["payload"]
+
+
+def result_csv_table(client, response):
+    download = client.post("/download/csv", data=dict(token=extract_token(response, "csv")))
+    assert download.status_code == 200 and download.data.startswith(b"\xef\xbb\xbf")
+    rows = list(csv.reader(io.StringIO(download.get_data(as_text=True).lstrip("\ufeff"))))
+    start = next(i for i, row in enumerate(rows) if row[:2] == ["范围", "通道"])
+    return [dict(zip(rows[start], row)) for row in rows[start+1:]]
 
 
 def post_csv(client, mission="Mission1", content=None, **extra):
@@ -49,19 +60,15 @@ def test_complete_manual_csv_preview_exports(client, mission):
     assert csv_json["config"]["aggregation"] == "channel_macro_mean"
     assert [row["channel"] for row in csv_json["channel_results"]] == ds["channels"]
     assert 'id="channel-scores"' in csv_result.get_data(as_text=True)
-    channel_csv = client.post("/download/channels", data={"token": extract_token(csv_result, "channels")})
-    assert channel_csv.status_code == 200
-    channel_rows = list(csv.DictReader(io.StringIO(channel_csv.get_data(as_text=True).lstrip("\ufeff"))))
-    assert [row["channel"] for row in channel_rows] == ds["channels"]
+    channel_rows = result_csv_table(client, csv_result)
+    assert channel_rows[0]["范围"] == "总体"
+    assert [row["通道"] for row in channel_rows[1:]] == ds["channels"]
     _, rows = read_csv(BASE / "demo_data" / mission / "predictions.csv")
     manual = client.post("/", data=dict(fields(mission, "manual"),
         channel=[r["channel"] for r in rows], starttime=[r["starttime"] for r in rows], endtime=[r["endtime"] for r in rows]))
     assert exported(client, manual)["metrics"] == csv_json["metrics"]
     assert exported(client, manual)["channel_results"] == csv_json["channel_results"]
-    events = client.post("/download/events", data={"token": extract_token(csv_result, "events")})
-    assert events.status_code == 200
-    assert mission in events.get_data(as_text=True)
-    assert events.data.startswith(b"\xef\xbb\xbf")
+    assert all("F0.5" in row and "误报区间" in row for row in channel_rows)
     example = client.get("/example", query_string=dict(mission=mission, source="demo", version="demo-1.0"))
     assert example.get_json()["rows"] == rows
     for kind in ("template", "predictions"):
@@ -124,7 +131,7 @@ def test_previous_protocol_signed_results_expire(client):
     from itsdangerous import URLSafeTimedSerializer
     signer = URLSafeTimedSerializer(client.application.config["SECRET_KEY"], salt="esa-evaluation-v1")
     token = signer.dumps(dict(kind="result", protocol="channel-macro-corrected-eventwise-f0.5/v1", payload={}))
-    response = client.post("/download/json", data=dict(token=token))
+    response = client.post("/download/csv", data=dict(token=token))
     assert response.status_code == 400
     assert "评分协议已变化" in response.get_data(as_text=True)
 
@@ -158,10 +165,9 @@ def test_partial_macro_denominators_and_csv_null_are_explicit(client):
     assert result["channel_results"][1]["metrics"]["f0_5"] is None
     text = response.get_data(as_text=True)
     assert "1 / 2 个通道参与" in text and "未参与 F0.5 宏平均" in text
-    downloaded = client.post("/download/channels", data=dict(token=extract_token(response,"channels")))
-    rows = list(csv.DictReader(io.StringIO(downloaded.get_data(as_text=True).lstrip("\ufeff"))))
-    assert rows[1]["channel"] == "channel_2" and rows[1]["f0_5"] == ""
-    assert rows[1]["status"] == "not_applicable" and rows[1]["reasons"]
+    rows = result_csv_table(client, response)
+    assert rows[2]["通道"] == "channel_2" and rows[2]["F0.5"] == "不适用"
+    assert "没有可评测真实事件" in rows[2]["备注"]
 
 
 def test_invalid_blocks_entire_score_and_errors_download(client):
@@ -257,7 +263,7 @@ def test_upload_and_record_limits_web(tmp_path):
 
 
 def test_forged_export_blocked(client):
-    assert client.post("/download/json", data=dict(token="forged")).status_code == 400
+    assert client.post("/download/csv", data=dict(token="forged")).status_code == 400
 
 
 def test_large_preview_form_field_uses_configured_request_limit(client):

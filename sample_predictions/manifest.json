@@ -7,7 +7,7 @@
   "missions": {
     "Mission1": {
       "file": "PIPELINE-CHECK-Mission1.csv",
-      "version": "local-filtered-2007-v1",
+      "version": "local-filtered-2007-v2",
       "start": "2007-01-01T00:00:00Z",
       "end": "2013-12-31T23:59:59.937000Z",
       "channels": ["channel_14", "channel_21", "channel_37", "channel_74", "channel_75"],
